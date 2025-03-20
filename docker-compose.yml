@@ -1,0 +1,796 @@
+version: "3.8"
+
+name: ${APP_NAME}
+
+###############################
+# Global Airflow Common Settings
+###############################
+x-airflow-common: &airflow-common
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_POSTGRES_USER}:${AIRFLOW_POSTGRES_PASSWORD}@${AIRFLOW_POSTGRES_HOST}:${AIRFLOW_POSTGRES_PORT}/airflow
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${AIRFLOW_POSTGRES_USER}:${AIRFLOW_POSTGRES_PASSWORD}@${AIRFLOW_POSTGRES_HOST}:${AIRFLOW_POSTGRES_PORT}/airflow
+    AIRFLOW__CELERY__BROKER_URL: redis://:@${AIRFLOW_REDIS_HOST}:${AIRFLOW_REDIS_PORT}/0
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'true'
+    AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: 1
+    AIRFLOW_UID: ${AIRFLOW_UID:-1000}
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+  volumes:
+    - ${RIO_ENGINE_BASE_DIR}/dags:/opt/airflow/dags
+    - ${RIO_ENGINE_BASE_DIR}/logs/airflow:/opt/airflow/logs
+    - ${RIO_ENGINE_BASE_DIR}/config/airflow:/opt/airflow/config
+    - ${RIO_ENGINE_BASE_DIR}/plugins/airflow:/opt/airflow/plugins
+  user: "${AIRFLOW_UID:-1000}:0"
+  # profiles: [airflow, backend]
+  networks:
+    - lepton
+
+services:
+  # Traefik Service
+  traefik:
+    container_name: ${TRAEFIK_CONTAINER_NAME}
+    image: ${TRAEFIK_IMAGE}
+    restart: always
+    command:
+      - --api.dashboard=true
+      - --api.insecure=true
+      - --accessLog.filePath=/logs/access.log
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443 #
+      - --entrypoints.dbsecure.address=:5432
+      - --providers.docker=true
+      - --providers.file.directory=/etc/traefik/services/
+      - --providers.file.watch=true
+      - --providers.docker.exposedbydefault=false
+      - --certificatesresolvers.myresolver.acme.tlschallenge=true
+      - --certificatesresolvers.myresolver.acme.email=team@leptonmaps.com
+      - --certificatesresolvers.myresolver.acme.storage=acme.json
+      - "--entrypoints.ldap.address=:389" 
+      - "--entrypoints.ldaps.address=:636"
+      - --log.level=DEBUG
+      - "--experimental.plugins.souin.moduleName=github.com/darkweak/souin"
+      - "--experimental.plugins.souin.version=v1.7.5" 
+      - --providers.file.directory=/etc/traefik/services
+      - --providers.file.watch=true
+    ports:
+      - ${TRAEFIK_HTTP_PORT}:80
+      - ${TRAEFIK_HTTPS_PORT}:443
+      - ${TRAEFIK_ADMIN_PORT}:8080
+    depends_on:
+      analytics:
+        condition: service_healthy
+
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.dashboard.entrypoints=web
+      - traefik.http.routers.dashboard.service=api@internal
+      # - traefik.http.middlewares.compression.compress=true
+      # - traefik.http.routers.dashboard.middlewares=compression
+    volumes:
+      - ${DOCKER_SOCKET_LOCATION}:/var/run/docker.sock:ro
+      - ${RIO_ENGINE_BASE_DIR}/config/traefik/services:/etc/traefik/services:ro
+      - ${RIO_ENGINE_BASE_DIR}/logs/traefik:/logs
+      - ${RIO_ENGINE_BASE_DIR}/config/traefik/certs:/certs
+    networks:
+      - lepton
+
+
+  # Postgres Service
+  db:
+    container_name: ${POSTGRES_CONTAINER_NAME}
+    image: ${POSTGRES_IMAGE}
+    healthcheck:
+      test: pg_isready -U ${POSTGRES_USER} -h localhost
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      vector:
+        condition: service_healthy
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - log_min_messages=fatal
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      PGPORT: ${POSTGRES_PORT}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      POSTGRES_DB: ${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXP: ${JWT_EXPIRY}
+    volumes:
+      - ${POSTGRES_CONFIG_DIR}/realtime.sql:/docker-entrypoint-initdb.d/migrations/99-realtime.sql:Z
+      - ${POSTGRES_CONFIG_DIR}/webhooks.sql:/docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql:Z
+      - ${POSTGRES_CONFIG_DIR}/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:Z
+      - ${POSTGRES_CONFIG_DIR}/jwt.sql:/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql:Z
+      - ${POSTGRES_DATA_DIR}:/var/lib/postgresql/data:Z
+      - ${POSTGRES_CONFIG_DIR}/_supabase.sql:/docker-entrypoint-initdb.d/migrations/97-_supabase.sql:Z
+      - ${POSTGRES_CONFIG_DIR}/logs.sql:/docker-entrypoint-initdb.d/migrations/99-logs.sql:Z
+      - ${POSTGRES_CONFIG_DIR}/pooler.sql:/docker-entrypoint-initdb.d/migrations/99-pooler.sql:Z
+      - db-config:/etc/postgresql-custom
+    networks:
+      - lepton
+
+  # Smart Flows Services
+  smart-flows-postgrest:
+    container_name: ${SMART_FLOWS_POSTGREST_CONTAINER_NAME}
+    image: ${SMART_FLOWS_POSTGREST_IMAGE}
+    restart: always
+    environment:
+      PGRST_DB_URI: ${SMART_FLOWS_DATABASE_URL}
+      PGRST_DB_SCHEMA: workflows
+      PGRST_DB_ANON_ROLE: postgres
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+    ports:
+      - "${SMART_FLOWS_POSTGREST_PORT}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - lepton
+
+  smart-flows-api:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    image: ${SMART_FLOWS_API_IMAGE}
+    container_name: ${SMART_FLOWS_API_CONTAINER_NAME}
+    restart: always
+    environment:
+      - BASE=/
+    env_file:
+      - .env
+    ports:
+      - "8007:80"
+    networks:
+      - lepton
+    volumes:
+     # - ./data:/data
+      - ${SMART_FLOWS_BASE_DIR}/dags/workflows/generated_dags:/workflows/generated_dags
+      - ${SMART_FLOWS_BASE_DIR}/dags/lib:/app/nodes/lib
+      - ${SMART_FLOWS_BASE_DIR}/dags/workflows:/app/nodes/workflows
+    entrypoint: gunicorn --workers 1 -b 0.0.0.0:80 -k uvicorn.workers.UvicornWorker --timeout 50000 main:api
+
+  airflow-postgres:
+    container_name: ${AIRFLOW_POSTGRES_CONTAINER_NAME}
+    image: ${AIRFLOW_POSTGRES_IMAGE}
+    environment:
+      POSTGRES_USER: ${AIRFLOW_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${AIRFLOW_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${AIRFLOW_POSTGRES_DB}
+    volumes:
+      - ${AIRFLOW_POSTGRES_DATA_DIR}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${AIRFLOW_POSTGRES_USER}"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    networks:
+      - lepton
+
+  redis:
+    container_name: ${AIRFLOW_REDIS_CONTAINER_NAME}
+    image: ${AIRFLOW_REDIS_IMAGE}
+    expose:
+      - 6379
+    networks:
+      - lepton
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 30s
+      retries: 50
+      start_period: 30s
+    restart: always
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: ${AIRFLOW_WEBSERVER_CONTAINER_NAME}
+    image: ${AIRFLOW_IMAGE}
+    command: webserver
+    ports:
+      - "${AIRFLOW_WEBSERVER_PORT}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: ${AIRFLOW_SCHEDULER_CONTAINER_NAME}
+    image: ${AIRFLOW_IMAGE}
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-worker:
+    <<: *airflow-common
+    container_name: ${AIRFLOW_WORKER_CONTAINER_NAME}
+    image: ${AIRFLOW_IMAGE}
+    command: celery worker
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}" || celery --app airflow.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"'
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    container_name: ${AIRFLOW_TRIGGERER_CONTAINER_NAME}
+    image: ${AIRFLOW_IMAGE}
+    command: triggerer
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-init:
+    <<: *airflow-common
+    image: ${AIRFLOW_IMAGE}
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /sources/{logs,dags,plugins}
+        chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins}
+        exec /entrypoint airflow version
+    user: "0:0"
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_POSTGRES_USER}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_POSTGRES_PASSWORD}
+    volumes:
+      - ${SMART_FLOWS_BASE_DIR}:/sources
+
+  # Supabase Services
+  studio:
+    container_name: ${APP_NAME}-studio
+    image: supabase/studio:20250224-d10db0f
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://studio:3000/api/platform/profile').then((r) => {if (r.status !== 200) throw new Error(r.status)})"
+        ]
+      timeout: 10s
+      interval: 5s
+      retries: 3
+    depends_on:
+      analytics:
+        condition: service_healthy
+    environment:
+      STUDIO_PG_META_URL: http://${APP_NAME}-meta:8080
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      DEFAULT_ORGANIZATION_NAME: ${STUDIO_DEFAULT_ORGANIZATION}
+      DEFAULT_PROJECT_NAME: ${STUDIO_DEFAULT_PROJECT}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+
+      SUPABASE_URL: http://${APP_NAME}-kong:8000
+      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      AUTH_JWT_SECRET: ${JWT_SECRET}
+
+      LOGFLARE_API_KEY: ${LOGFLARE_API_KEY}
+      LOGFLARE_URL: http://${APP_NAME}-analytics:4000
+      NEXT_PUBLIC_ENABLE_LOGS: true
+      # Comment to use Big Query backend for analytics
+      NEXT_ANALYTICS_BACKEND_PROVIDER: postgres
+      # Uncomment to use Big Query backend for analytics
+      # NEXT_ANALYTICS_BACKEND_PROVIDER: bigquery
+    networks:
+      - ${DOCKER_NETWORK}
+
+  kong:
+    container_name: ${APP_NAME}-kong
+    image: kong:2.8.1
+    restart: unless-stopped
+    # https://unix.stackexchange.com/a/294837
+    entrypoint: bash -c 'eval "echo \"$$(cat ~/temp.yml)\"" > ~/kong.yml && /docker-entrypoint.sh kong docker-start'
+    ports:
+      - ${KONG_HTTP_PORT}:8000/tcp
+      - ${KONG_HTTPS_PORT}:8443/tcp
+    depends_on:
+      analytics:
+        condition: service_healthy
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      # https://github.com/supabase/cli/issues/14
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      DASHBOARD_USERNAME: ${STUDIO_USERNAME}
+      DASHBOARD_PASSWORD: ${STUDIO_PASSWORD}
+      APP_NAME: ${APP_NAME}
+    volumes:
+      # https://github.com/supabase/supabase/issues/12661
+      - ${RIO_ENGINE_BASE_DIR}/config/kong/kong.yml:/home/kong/temp.yml:ro,z
+    networks:
+      - ${DOCKER_NETWORK}
+
+  auth:
+    container_name: ${APP_NAME}-auth
+    image: supabase/gotrue:v2.164.0
+    depends_on:
+      db:
+        condition: service_healthy
+      analytics:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:9999/health",
+        ]
+      timeout: 5s
+      interval: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - ${DOCKER_NETWORK}
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${API_EXTERNAL_URL}
+
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+
+      GOTRUE_SITE_URL: ${SITE_URL}
+      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS}
+      GOTRUE_DISABLE_SIGNUP: ${DISABLE_SIGNUP}
+
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: ${JWT_EXPIRY}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: ${ENABLE_EMAIL_SIGNUP}
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: ${ENABLE_ANONYMOUS_USERS}
+      GOTRUE_MAILER_AUTOCONFIRM: ${ENABLE_EMAIL_AUTOCONFIRM}
+
+      # Uncomment to bypass nonce check in ID Token flow. Commonly set to true when using Google Sign In on mobile.
+      # GOTRUE_EXTERNAL_SKIP_NONCE_CHECK: true
+
+      # GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED: true
+      # GOTRUE_SMTP_MAX_FREQUENCY: 1s
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL}
+      GOTRUE_SMTP_HOST: ${SMTP_HOST}
+      GOTRUE_SMTP_PORT: ${SMTP_PORT}
+      GOTRUE_SMTP_USER: ${SMTP_USER}
+      GOTRUE_SMTP_PASS: ${SMTP_PASS}
+      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME}
+      GOTRUE_MAILER_URLPATHS_INVITE: ${MAILER_URLPATHS_INVITE}
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: ${MAILER_URLPATHS_CONFIRMATION}
+      GOTRUE_MAILER_URLPATHS_RECOVERY: ${MAILER_URLPATHS_RECOVERY}
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: ${MAILER_URLPATHS_EMAIL_CHANGE}
+
+      GOTRUE_EXTERNAL_PHONE_ENABLED: ${ENABLE_PHONE_SIGNUP}
+      GOTRUE_SMS_AUTOCONFIRM: ${ENABLE_PHONE_AUTOCONFIRM}
+      # Uncomment to enable custom access token hook. Please see: https://supabase.com/docs/guides/auth/auth-hooks for full list of hooks and additional details about custom_access_token_hook
+
+      # GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED: "true"
+      # GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI: "pg-functions://postgres/public/custom_access_token_hook"
+      # GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_SECRETS: "<standard-base64-secret>"
+
+      # GOTRUE_HOOK_MFA_VERIFICATION_ATTEMPT_ENABLED: "true"
+      # GOTRUE_HOOK_MFA_VERIFICATION_ATTEMPT_URI: "pg-functions://postgres/public/mfa_verification_attempt"
+
+      # GOTRUE_HOOK_PASSWORD_VERIFICATION_ATTEMPT_ENABLED: "true"
+      # GOTRUE_HOOK_PASSWORD_VERIFICATION_ATTEMPT_URI: "pg-functions://postgres/public/password_verification_attempt"
+
+      # GOTRUE_HOOK_SEND_SMS_ENABLED: "false"
+      # GOTRUE_HOOK_SEND_SMS_URI: "pg-functions://postgres/public/custom_access_token_hook"
+      # GOTRUE_HOOK_SEND_SMS_SECRETS: "v1,whsec_VGhpcyBpcyBhbiBleGFtcGxlIG9mIGEgc2hvcnRlciBCYXNlNjQgc3RyaW5n"
+
+      # GOTRUE_HOOK_SEND_EMAIL_ENABLED: "false"
+      # GOTRUE_HOOK_SEND_EMAIL_URI: "http://host.docker.internal:54321/functions/v1/email_sender"
+      # GOTRUE_HOOK_SEND_EMAIL_SECRETS: "v1,whsec_VGhpcyBpcyBhbiBleGFtcGxlIG9mIGEgc2hvcnRlciBCYXNlNjQgc3RyaW5n"
+
+  rest:
+    container_name: ${APP_NAME}-rest
+    image: postgrest/postgrest:v12.2.8
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      analytics:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS}
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET}
+      PGRST_APP_SETTINGS_JWT_EXP: ${JWT_EXPIRY}
+    command:
+      [
+        "postgrest"
+      ]
+    networks:
+      - ${DOCKER_NETWORK}
+
+  realtime:
+    # This container name looks inconsistent but is correct because realtime constructs tenant id by parsing the subdomain
+    container_name: realtime-dev.${APP_NAME}-realtime
+    image: supabase/realtime:v2.33.58
+    depends_on:
+      db:
+        # Disable this if you are using an external Postgres database
+        condition: service_healthy
+      analytics:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-sSfL",
+          "--head",
+          "-o",
+          "/dev/null",
+          "-H",
+          "Authorization: Bearer ${ANON_KEY}",
+          "http://localhost:4000/api/tenants/realtime-dev/health",
+        ]
+      timeout: 5s
+      interval: 5s
+      retries: 3
+    restart: unless-stopped
+    environment:
+      PORT: 4000
+      DB_HOST: ${POSTGRES_HOST}
+      DB_PORT: ${POSTGRES_PORT}
+      DB_USER: supabase_admin
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+      DB_AFTER_CONNECT_QUERY: "SET search_path TO _realtime"
+      DB_ENC_KEY: supabaserealtime
+      API_JWT_SECRET: ${JWT_SECRET}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      ERL_AFLAGS: -proto_dist inet_tcp
+      DNS_NODES: "''"
+      RLIMIT_NOFILE: "10000"
+      APP_NAME: realtime
+      SEED_SELF_HOST: true
+    networks:
+      - ${DOCKER_NETWORK}
+
+  # To use S3 backed storage: docker compose -f docker-compose.yml -f docker-compose.s3.yml up
+  # To use S3 backed storage: docker compose -f docker-compose.yml -f docker-compose.s3.yml up
+  storage:
+    container_name: ${APP_NAME}-storage
+    image: supabase/storage-api:v1.19.1
+    restart: unless-stopped
+    volumes:
+      - ${RIO_ENGINE_BASE_DIR}/data/storage:/var/lib/storage:z
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://storage:5000/status"
+        ]
+      timeout: 5s
+      interval: 5s
+      retries: 3
+    depends_on:
+      db:
+        # Disable this if you are using an external Postgres database
+        condition: service_healthy
+      rest:
+        condition: service_started
+      imgproxy:
+        condition: service_started
+    environment:
+      ANON_KEY: ${ANON_KEY}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      POSTGREST_URL: http://${APP_NAME}-rest:3000
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      FILE_SIZE_LIMIT: 52428800
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      # TODO: https://github.com/supabase/storage-api/issues/55
+      REGION: stub
+      GLOBAL_S3_BUCKET: stub
+      ENABLE_IMAGE_TRANSFORMATION: "true"
+      IMGPROXY_URL: http://${APP_NAME}-imgproxy:5001
+    networks:
+      - ${DOCKER_NETWORK}
+
+  imgproxy:
+    container_name: ${APP_NAME}-imgproxy
+    image: darthsim/imgproxy:v3.8.0
+    healthcheck:
+      test: ["CMD", "imgproxy", "health"]
+      timeout: 5s
+      interval: 5s
+      retries: 3
+    environment:
+      IMGPROXY_BIND: ":5001"
+      IMGPROXY_LOCAL_FILESYSTEM_ROOT: /
+      IMGPROXY_USE_ETAG: "true"
+      IMGPROXY_ENABLE_WEBP_DETECTION: ${IMGPROXY_ENABLE_WEBP_DETECTION}
+    volumes:
+      - ${RIO_ENGINE_BASE_DIR}/data/storage:/var/lib/storage:z
+    networks:
+      - ${DOCKER_NETWORK}
+
+  meta:
+    container_name: ${APP_NAME}-meta
+    image: supabase/postgres-meta:v0.86.0
+    restart: unless-stopped
+    networks:
+      - ${DOCKER_NETWORK}
+    depends_on:
+      db:
+        # Disable this if you are using an external Postgres database
+        condition: service_healthy
+      analytics:
+        condition: service_healthy
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: ${POSTGRES_HOST}
+      PG_META_DB_PORT: ${POSTGRES_PORT}
+      PG_META_DB_NAME: ${POSTGRES_DB}
+      PG_META_DB_USER: supabase_admin
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
+
+  functions:
+    container_name: ${APP_NAME}-edge-functions
+    image: supabase/edge-runtime:v1.67.2
+    restart: unless-stopped
+    volumes:
+      - ${RIO_ENGINE_BASE_DIR}/functions:/home/deno/functions:Z
+    depends_on:
+      analytics:
+        condition: service_healthy
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      SUPABASE_URL: http://${APP_NAME}-kong:8000
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+      SUPABASE_DB_URL: postgresql://postgres:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      # TODO: Allow configuring VERIFY_JWT per function. This PR might help: https://github.com/supabase/cli/pull/786
+      VERIFY_JWT: "${FUNCTIONS_VERIFY_JWT}"
+    command:
+      [
+        "start",
+        "--main-service",
+        "/home/deno/functions/main"
+      ]
+    networks:
+      - ${DOCKER_NETWORK}
+
+  analytics:
+    container_name: ${APP_NAME}-analytics
+    image: supabase/logflare:1.11.0
+    restart: unless-stopped
+    networks:
+      - ${DOCKER_NETWORK}
+    ports:
+      - ${ANALYTICS_PORT}:4000
+    # Uncomment to use Big Query backend for analytics
+    # volumes:
+    #   - type: bind
+    #     source: ${PWD}/gcloud.json
+    #     target: /opt/app/rel/logflare/bin/gcloud.json
+    #     read_only: true
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "http://localhost:4000/health"
+        ]
+      timeout: 5s
+      interval: 5s
+      retries: 10
+    depends_on:
+      db:
+        # Disable this if you are using an external Postgres database
+        condition: service_healthy
+    environment:
+      LOGFLARE_NODE_HOST: 127.0.0.1
+      DB_USERNAME: supabase_admin
+      DB_DATABASE: _supabase
+      DB_HOSTNAME: ${POSTGRES_HOST}
+      DB_PORT: ${POSTGRES_PORT}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_SCHEMA: _analytics
+      LOGFLARE_API_KEY: ${LOGFLARE_API_KEY}
+      LOGFLARE_SINGLE_TENANT: true
+      LOGFLARE_SUPABASE_MODE: true
+      LOGFLARE_MIN_CLUSTER_SIZE: 1
+
+      # Comment variables to use Big Query backend for analytics
+      POSTGRES_BACKEND_URL: postgresql://supabase_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/_supabase
+      POSTGRES_BACKEND_SCHEMA: _analytics
+      LOGFLARE_FEATURE_FLAG_OVERRIDE: multibackend=true
+      # Uncomment to use Big Query backend for analytics
+      # GOOGLE_PROJECT_ID: ${GOOGLE_PROJECT_ID}
+      # GOOGLE_PROJECT_NUMBER: ${GOOGLE_PROJECT_NUMBER}
+
+  vector:
+    container_name: ${APP_NAME}-vector
+    image: timberio/vector:0.28.1-alpine
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://vector:9001/health",
+        ]
+
+      timeout: 5s
+      interval: 5s
+      retries: 3
+    volumes:
+      - ${RIO_ENGINE_BASE_DIR}/config/vector/vector.yml:/etc/vector/vector.yml:ro,z
+      - ${DOCKER_SOCKET_LOCATION}:/var/run/docker.sock:ro
+    environment:
+      APP_NAME: ${APP_NAME}
+      LOGFLARE_API_KEY: ${LOGFLARE_API_KEY}
+    command: ["--config", "/etc/vector/vector.yml"]
+    networks:
+      - ${DOCKER_NETWORK}
+
+  supavisor:
+    container_name: ${APP_NAME}-pooler
+    image: supabase/supavisor:2.3.9
+    restart: unless-stopped
+    ports:
+      - ${POSTGRES_PORT}:5432
+      - ${POOLER_PROXY_PORT_TRANSACTION}:6543
+    networks:
+      - ${DOCKER_NETWORK}
+    volumes:
+      - ${RIO_ENGINE_BASE_DIR}/config/pooler/pooler.exs:/etc/pooler/pooler.exs:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-sSfL",
+          "--head",
+          "-o",
+          "/dev/null",
+          "http://127.0.0.1:4000/api/health"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      db:
+        # Disable this if you are using an external Postgres database
+        condition: service_healthy
+      analytics:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASE_URL: ecto://supabase_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/_supabase
+      CLUSTER_POSTGRES: true
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      VAULT_ENC_KEY: ${VAULT_ENC_KEY}
+      API_JWT_SECRET: ${JWT_SECRET}
+      METRICS_JWT_SECRET: ${JWT_SECRET}
+      REGION: local
+      ERL_AFLAGS: -proto_dist inet_tcp
+      POOLER_TENANT_ID: ${POOLER_TENANT_ID}
+      POOLER_DEFAULT_POOL_SIZE: ${POOLER_DEFAULT_POOL_SIZE}
+      POOLER_MAX_CLIENT_CONN: ${POOLER_MAX_CLIENT_CONN}
+      POOLER_POOL_MODE: transaction
+    command:
+      [
+        "/bin/sh",
+        "-c",
+        "/app/bin/migrate && /app/bin/supavisor eval \"$$(cat /etc/pooler/pooler.exs)\" && /app/bin/server"
+      ]
+
+  # Smart Market Service
+  smart-market:
+    image: ${SMART_MARKET_IMAGE}
+    container_name: ${SMART_MARKET_CONTAINER_NAME}
+    restart: unless-stopped
+    env_file:
+      - ${RIO_ENGINE_BASE_DIR}/.env
+    ports:
+      - ${SMART_MARKET_PORT}:3000
+    networks:
+      - lepton
+
+volumes:
+  db-config:
+  airflow-db-volume:
+
+networks:
+  lepton:
+    name: ${DOCKER_NETWORK}
+    external: true 
