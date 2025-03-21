@@ -1,0 +1,22 @@
+# traefik dynamic config for smart-market service
+http:
+  middlewares:
+    strip-kong-prefix:
+      stripPrefix:
+        prefixes:
+          - "/base"
+  services:
+    smart-market-kong:
+      loadBalancer:
+        servers:
+          - url: `http://{{ env "APP_NAME" }}-kong:8000`
+
+  routers:
+    smart-market-kong-router:
+      entryPoints:
+        - web
+      rule: "PathPrefix(`/base`)"
+      priority: 2
+      service: smart-market-kong
+      middlewares:
+        - strip-kong-prefix

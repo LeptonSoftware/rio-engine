@@ -1,0 +1,16 @@
+# traefik dynamic config for smart-market service
+
+http:
+  services:
+    smart-market:
+      loadBalancer:
+        servers:
+          - url: `http://{ { env "APP_URL" } }:3000`
+
+  routers:
+    smart-market-router:
+      entryPoints:
+        - web
+      rule: "PathPrefix(`/`)"
+      service: smart-market
+      priority: 1
