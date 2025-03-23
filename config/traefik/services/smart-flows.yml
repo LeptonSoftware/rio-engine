@@ -1,0 +1,58 @@
+# traefik dynamic config for smart-flows service
+
+http:
+  middlewares:
+    strip-airflow-prefix:
+      stripPrefix:
+        prefixes:
+          - "/base/airflow"
+    strip-airflow-api-prefix:
+      stripPrefix:
+        prefixes:
+          - "/base/flows"
+    strip-flows-db-api-prefix:
+      stripPrefix:
+        prefixes:
+          - "/base/flows-db"
+
+  services:
+    airflow-service:
+      loadBalancer:
+        servers:
+          - url: {{ env "AIRFLOW_URL" }}
+    flows-db-api-service:
+      loadBalancer:
+        servers:
+          - url: {{ env "AIRFLOW_DB_API_URL" }}
+    airflow-api-service:
+      loadBalancer:
+        servers:
+          - url: {{ env "AIRFLOW_API_URL" }}
+
+  routers:
+    flows-db-api-router:
+      entryPoints:
+        - web
+      rule: "PathPrefix(`/base/flows-db`)"
+      service: flows-db-api-service
+      priority: 5
+      middlewares:
+        - strip-flows-db-api-prefix
+
+    airflow-router:
+      entryPoints:
+        - web
+      rule: "PathPrefix(`/base/airflow`)"
+      service: airflow-service
+      priority: 4
+      middlewares:
+        - strip-airflow-prefix
+
+    airflow-api-router:
+      entryPoints:
+        - web
+      rule: "PathPrefix(`/base/flows`)"
+      service: airflow-api-service
+      priority: 3
+      middlewares:
+        - strip-airflow-api-prefix
