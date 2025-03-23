@@ -5,7 +5,7 @@ http:
     smart-market:
       loadBalancer:
         servers:
-          - url: `http://{ { env "APP_URL" } }:3000`
+          - url: "{{ env "APP_URL" }}:{{ env "SMART_MARKET_PORT" }}"
 
   routers:
     smart-market-router:

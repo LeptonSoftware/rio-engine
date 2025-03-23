@@ -19,15 +19,15 @@ http:
     airflow-service:
       loadBalancer:
         servers:
-          - url: { { env "AIRFLOW_URL" } }
+          - url: {{ env "AIRFLOW_URL" }}
     flows-db-api-service:
       loadBalancer:
         servers:
-          - url: { { env "AIRFLOW_DB_API_URL" } }
+          - url: {{ env "AIRFLOW_DB_API_URL" }}
     airflow-api-service:
       loadBalancer:
         servers:
-          - url: { { env "AIRFLOW_API_URL" } }
+          - url: {{ env "AIRFLOW_API_URL" }}
 
   routers:
     flows-db-api-router:

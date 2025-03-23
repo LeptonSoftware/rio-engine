@@ -505,6 +505,8 @@ services:
       PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET}
       PGRST_APP_SETTINGS_JWT_EXP: ${JWT_EXPIRY}
     command: ["postgrest"]
+    ports:
+      - "8006:3000"
     networks:
       - ${DOCKER_NETWORK}
 
