@@ -36,6 +36,38 @@ cp .env.example .env
 docker compose up -d
 ```
 
+4. Run Migrations
+```bash
+supabase db push --db-url=postgres://postgres.rio-engine:postgres@localhost:5432/postgres
+```
+
+5. To initialize airflow db
+```bash 
+docker compose run --entrypoint /bin/bash airflow-webserver
+```
+And then
+```bash
+airflow db init
+```
+
+6. To add airflow user
+
+```bash
+docker exec -it rio-engine-airflow-webserver /bin/sh
+```
+
+And then
+```bash
+airflow users create \
+  --username airflow \
+  --firstname airflow \
+  --lastname airflo \
+  --role Admin \
+  --email airflow@airflow.com \
+  --password airflow
+```
+
+
 ## 🏗️ Architecture
 
 ### 🛢️ Supabase Services
