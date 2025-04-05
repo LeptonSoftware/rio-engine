@@ -22,7 +22,7 @@ x-airflow-common: &airflow-common
     PYTHONPATH: /home/airflow/.local/lib/python3.12/site-packages
     AIRFLOW__WEBSERVER__BASE_URL: /base/airflow
   volumes:
-    - ${RIO_ENGINE_BASE_DIR}/dags:/opt/airflow/dags
+    - ${SMART_FLOWS_BASE_DIR}/dags:/opt/airflow/dags
     - ${RIO_ENGINE_BASE_DIR}/logs/airflow:/opt/airflow/logs
     - ${RIO_ENGINE_BASE_DIR}/config/airflow:/opt/airflow/config
     - ${RIO_ENGINE_BASE_DIR}/plugins/airflow:/opt/airflow/plugins
