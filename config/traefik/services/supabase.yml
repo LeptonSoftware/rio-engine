@@ -10,6 +10,10 @@ http:
       loadBalancer:
         servers:
           - url: "http://{{ env "APP_NAME" }}-kong:8000"
+    studio:
+      loadBalancer:
+        servers:
+          - url: "http://{{ env "APP_NAME" }}-studio:3000"
 
   routers:
     smart-market-kong-router:
@@ -20,3 +24,10 @@ http:
       service: smart-market-kong
       middlewares:
         - strip-kong-prefix
+
+    studio-router:
+      entryPoints:
+        - web
+      rule: "PathPrefix(`/base/studio`)"
+      priority: 3
+      service: studio

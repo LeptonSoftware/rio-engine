@@ -1,3 +1,0 @@
-[submodule "dags"]
-	path = dags
-	url = https://github.com/LeptonSoftware/smart-flows

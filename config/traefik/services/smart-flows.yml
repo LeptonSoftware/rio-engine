@@ -2,10 +2,6 @@
 
 http:
   middlewares:
-    strip-airflow-prefix:
-      stripPrefix:
-        prefixes:
-          - "/base/airflow"
     strip-airflow-api-prefix:
       stripPrefix:
         prefixes:
@@ -23,11 +19,11 @@ http:
     flows-db-api-service:
       loadBalancer:
         servers:
-          - url: {{ env "AIRFLOW_DB_API_URL" }}
+          - url:  "{{ env "APP_URL" }}:{{ env "SMART_FLOWS_POSTGREST_PORT" }}"
     airflow-api-service:
       loadBalancer:
         servers:
-          - url: {{ env "AIRFLOW_API_URL" }}
+          - url: "{{ env "APP_URL" }}:{{ env "SMART_FLOWS_API_PORT" }}"
 
   routers:
     flows-db-api-router:
@@ -45,8 +41,6 @@ http:
       rule: "PathPrefix(`/base/airflow`)"
       service: airflow-service
       priority: 4
-      middlewares:
-        - strip-airflow-prefix
 
     airflow-api-router:
       entryPoints:

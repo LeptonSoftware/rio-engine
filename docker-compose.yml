@@ -20,6 +20,7 @@ x-airflow-common: &airflow-common
     AIRFLOW_UID: ${AIRFLOW_UID:-1000}
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
     PYTHONPATH: /home/airflow/.local/lib/python3.12/site-packages
+    AIRFLOW__WEBSERVER__BASE_URL: /base/airflow
   volumes:
     - ${RIO_ENGINE_BASE_DIR}/dags:/opt/airflow/dags
     - ${RIO_ENGINE_BASE_DIR}/logs/airflow:/opt/airflow/logs
@@ -153,7 +154,7 @@ services:
     env_file:
       - .env
     ports:
-      - "8007:80"
+      - "${SMART_FLOWS_API_PORT}:80"
     networks:
       - lepton
     volumes:
@@ -299,9 +300,9 @@ services:
         mkdir -p /sources/{logs,dags,plugins}
         chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins}
         airflow version
-        airflow variables set SUPABASE_URL ${PRIVATE_RIO_ENGINE_URL}
-        airflow variables set SUPABASE_KEY ${PRIVATE_RIO_ENGINE_ANON_KEY}
-        airflow variables set SMART_FLOWS_DB_URL http://${SMART_FLOWS_POSTGREST_CONTAINER_NAME}:3000
+        airflow variables set SUPABASE_URL ${SUPABASE_INTERNAL_URL}
+        airflow variables set SUPABASE_KEY ${SERVICE_ROLE_KEY}
+        airflow variables set SMART_FLOWS_DB_URL ${APP_URL}/base/flows-db
         airflow variables set SMART_MARKET_API_URL http://${APP_NAME}-smart-market:3000
         airflow variables set LEPTON_API_KEY ${PUBLIC_LEPTON_MAPS_API_KEY}
         airflow connections add 'smart_market_db' --conn-uri ${DATABASE_URL}
@@ -332,7 +333,7 @@ services:
   # Supabase Services
   studio:
     container_name: ${APP_NAME}-studio
-    image: supabase/studio:20250224-d10db0f
+    image: leptonworld/studio:latest
     restart: unless-stopped
     healthcheck:
       test:
