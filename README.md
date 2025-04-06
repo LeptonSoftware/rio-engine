@@ -61,7 +61,7 @@ And then
 airflow users create \
   --username airflow \
   --firstname airflow \
-  --lastname airflo \
+  --lastname airflow \
   --role Admin \
   --email airflow@airflow.com \
   --password airflow

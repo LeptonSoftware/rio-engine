@@ -15,15 +15,15 @@ http:
     airflow-service:
       loadBalancer:
         servers:
-          - url: {{ env "AIRFLOW_URL" }}
+          - url: "http://{{ env "APP_NAME" }}-airflow-webserver:8080"
     flows-db-api-service:
       loadBalancer:
         servers:
-          - url:  "{{ env "APP_URL" }}:{{ env "SMART_FLOWS_POSTGREST_PORT" }}"
+          - url: "http://{{ env "APP_NAME" }}-flows-postgrest:3000"
     airflow-api-service:
       loadBalancer:
         servers:
-          - url: "{{ env "APP_URL" }}:{{ env "SMART_FLOWS_API_PORT" }}"
+          - url: "http://{{ env "APP_NAME" }}-flows-api:80"
 
   routers:
     flows-db-api-router:
