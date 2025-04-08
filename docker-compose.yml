@@ -134,6 +134,7 @@ services:
       PGRST_DB_SCHEMA: workflows
       PGRST_DB_ANON_ROLE: postgres
       PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_PREPARED_STATEMENTS: "false"  # Disable prepared statements
     ports:
       - "${SMART_FLOWS_POSTGREST_PORT}:3000"
     depends_on:

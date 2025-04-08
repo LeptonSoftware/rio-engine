@@ -10,6 +10,14 @@ http:
       stripPrefix:
         prefixes:
           - "/base/flows-db"
+    ## To Enable Cors
+    # airflow-cors:
+    #   headers:
+    #     accesscontrolallowmethods: "GET,OPTIONS,PUT,PATCH"
+    #     accesscontrolallowheaders: "*"
+    #     accesscontrolalloworiginlist: "*"
+    #     accesscontrolmaxage: 100
+    #     addvaryheader: true
 
   services:
     airflow-service:
@@ -34,6 +42,7 @@ http:
       priority: 5
       middlewares:
         - strip-flows-db-api-prefix
+        #- airflow-cors
 
     airflow-router:
       entryPoints:
@@ -41,6 +50,8 @@ http:
       rule: "PathPrefix(`/base/airflow`)"
       service: airflow-service
       priority: 4
+      #middlewares:
+        #- airflow-cors
 
     airflow-api-router:
       entryPoints:
@@ -50,3 +61,4 @@ http:
       priority: 3
       middlewares:
         - strip-airflow-api-prefix
+        #- airflow-cors
