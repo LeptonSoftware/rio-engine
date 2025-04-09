@@ -1,0 +1,21 @@
+# traefik dynamic config for smart-market service
+http:
+  middlewares:
+    strip-tiler-prefix:
+      stripPrefix:
+        prefixes:
+          - "/base/tiler"
+  services:
+    smart-flows-tiler:
+      loadBalancer:
+        servers:
+          - url: 'http://{{ env "APP_NAME" }}-smart-flows-tiler:7800'
+
+  routers:
+    smart-flows-tiler-router:
+      rule: "PathPrefix(`/base/tiler`)"
+      priority: 2
+      service: smart-flows-tiler
+      middlewares:
+        - strip-tiler-prefix
+
