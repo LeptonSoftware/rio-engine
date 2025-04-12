@@ -7,6 +7,8 @@ import json
 from typing import List, Optional, Annotated, Literal, Any
 import geopandas as gpd
 from sqlalchemy import text
+import pandas as pd
+
 def get_db_engine_lepton():
     # import from lib.db and call that
     from lib.db import get_db_engine_lepton as fn
@@ -300,6 +302,10 @@ class Node:
                     connection.execute(
                         f'ALTER TABLE workflows."{output_table_name}" ADD COLUMN IF NOT EXISTS "_gid" SERIAL;'
                     )
+                    # Ensure _gid is always treated as integer type
+                    connection.execute(
+                        f'ALTER TABLE workflows."{output_table_name}" ALTER COLUMN "_gid" TYPE INTEGER;'
+                    )
                     connection.execute(
                         f'CREATE INDEX idx_{output_table_name}_gid ON workflows."{output_table_name}" USING HASH("_gid");'
                     )
@@ -358,6 +364,26 @@ class Node:
             raise ValueError("DataFrame is empty")
         if "_gid" not in df.columns:
             df["_gid"] = range(1, len(df) + 1)
+        else:
+            # Check for NaN values in _gid column and replace them with new sequential IDs
+            if df["_gid"].isna().any():
+                # Count existing valid IDs
+                max_id = df["_gid"].max()
+                if pd.isna(max_id):  # If all are NaN
+                    max_id = 0
+                else:
+                    max_id = int(max_id)
+                
+                # Create a mask for NaN values
+                nan_mask = df["_gid"].isna()
+                # Generate new IDs for NaN values
+                new_ids = range(max_id + 1, max_id + 1 + nan_mask.sum())
+                # Assign new IDs to NaN positions
+                df.loc[nan_mask, "_gid"] = list(new_ids)
+            
+            # Ensure _gid is always integer type
+            df["_gid"] = df["_gid"].astype(int)
+            
         engine = get_db_engine_lepton()
         
         # Check cache validity
@@ -386,6 +412,33 @@ class Node:
         except Exception as e:
             raise ValueError(f"ERR: {str(e)}")
         return table_name, False
+
+    def build_gid_query(self, table_name, feature_id=None, additional_conditions=None):
+        """
+        Build a SQL query with proper type casting for _gid.
+        
+        Args:
+            table_name: The table name to query
+            feature_id: Optional feature ID to filter by
+            additional_conditions: Optional additional WHERE conditions
+            
+        Returns:
+            SQL query string with proper type casting
+        """
+        base_query = f'SELECT * FROM workflows."{table_name}"'
+        
+        conditions = []
+        if feature_id is not None:
+            conditions.append(f'_gid = {feature_id}::bigint')
+            
+        if additional_conditions:
+            conditions.append(additional_conditions)
+            
+        if conditions:
+            where_clause = ' WHERE ' + ' AND '.join(conditions)
+            return base_query + where_clause
+        else:
+            return base_query
 
 
 # class Geometry(BaseModel):
