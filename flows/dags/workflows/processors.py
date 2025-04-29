@@ -11,6 +11,8 @@ from supabase import create_client
 import time
 from shapely import wkt
 from shapely.geometry import Point
+import base64
+import jwt
 
 
 def get_db_engine_workflows():
@@ -253,10 +255,14 @@ def geocode(**kwargs):
             return locality_data
 
         try:
+            # Get API key using the user-based method
+            api_key = node.get_api_key_from_user()
+            print("API key for geocode: ", api_key)
+            
             response = requests.post(
                 "https://api.leptonmaps.com/v1/detect/locality",
                 json=post_data,
-                headers={"X-API-Key": Variable.get("LEPTON_API_KEY")},
+                headers={"X-API-Key": api_key},
                 timeout=30,  # Set timeout to prevent hanging requests
             )
             response.raise_for_status()  # Raise error for non-200 responses
@@ -604,8 +610,10 @@ def get_column_defs(table_name):
         WHERE table_schema = 'workflows' 
         AND table_name = %s
     """
-    result = engine.execute(query, (table_name,))
-    return {row[0]: row[1] for row in result}
+    with engine.connect() as connection:
+        # Execute and fetch all results within the context
+        result = connection.execute(query, (table_name,)).fetchall()
+        return {row[0]: row[1] for row in result}
 
 def catchment(**kwargs):
     from airflow.models import Variable
@@ -679,21 +687,28 @@ def catchment(**kwargs):
             "accuracy_time_based": accuracy_time_based,
             "departure_time": departure_time,
         }
+        # Get API key using new method that supports user_id and org_id
+        api_key = node.get_api_key_from_user()
+        print("api_key: ", api_key)
         params = {k: v for k, v in all_params.items() if v is not None}
         print("paramas: ", params)
         url = base_url + "?" + urlencode(params)
         print(url, params)
         response = requests.get(
             url,
-            headers={"x-api-key": Variable.get("LEPTON_API_KEY")},
+            headers={"x-api-key": api_key},
         )
 
         if response.ok:
             data = response.json()
-            print(data)
             features = data.get("features", [])
             if features:
-                return shape(features[0]["geometry"])
+                geometry = features[0].get("geometry")
+                if geometry is None:
+                    # Create an empty geometry using shapely
+                    from shapely.geometry import Polygon
+                    return Polygon([])  # Empty polygon instead of None
+                return shape(geometry)
             return None
         return None
 
@@ -730,7 +745,6 @@ def catchment(**kwargs):
         results = list(executor.map(parallel_catchment, (r for _, r in df.iterrows())))
 
     df["geometry"] = results
-    print(df["geometry"])
     is_cached = node.save_df_to_postgres(df, output_table_name)
 
     return {"output": output_table_name, "is_cached": is_cached}
@@ -738,6 +752,8 @@ def catchment(**kwargs):
 
 def createsmartmarketlayer(**kwargs):
     from airflow.models import Variable
+    import base64
+    import jwt
 
     node = Node(**kwargs)
     project_id = node.input("project_id")
@@ -745,65 +761,12 @@ def createsmartmarketlayer(**kwargs):
     replace_existing = node.input("replaceExisting", False)  # New input parameter
     engine = get_db_engine_workflows()
 
-    # Generate unique identifiers
-    unique_lock_id = f"smartmarket_{project_id}_{int(time.time() * 1000)}"
-    unique_locker_id = f"{kwargs.get('node_id')}"
+    # Get user_id and org_id from the node parameters
+    user_id = node.params("user_id","")
+    org_id = node.params("org_id","")
 
-    # Try to acquire lock
-    def acquire_lock():
-        try:
-            # Check if any active locks exist
-            result = engine.execute(
-                """
-                SELECT COUNT(*) 
-                FROM process_locks 
-                WHERE workflow_id = %s
-            """,
-                (workflow_id),
-            ).scalar()
-
-            print(result)
-
-            if result > 0:
-                return False
-
-            # Create new lock
-            engine.execute(
-                """
-                INSERT INTO process_locks (lock_id, locked_by, project_id, workflow_id)
-                VALUES (%s, %s, %s, %s)
-            """,
-                (unique_lock_id, unique_locker_id, project_id, workflow_id),
-            )
-
-            return True
-        except Exception as e:
-            print(f"Error acquiring lock: {e}")
-            return False
-
-    # Release lock
-    def release_lock():
-        try:
-            engine.execute(
-                """
-                DELETE FROM process_locks 
-                WHERE lock_id = %s AND locked_by = %s
-            """,
-                (unique_lock_id, unique_locker_id),
-            )
-            print("Lock released")
-        except Exception as e:
-            print(f"Error releasing lock: {e}")
-
-    # Wait for lock with timeout
-    max_attempts = 30  # 30 seconds timeout
-    attempt = 0
-    while not acquire_lock():
-        time.sleep(1)
-        attempt += 1
-        print(f"Attempt {attempt} of {max_attempts}")
-        if attempt >= max_attempts:
-            raise RuntimeError("Timeout waiting for lock")
+    # if not user_id or not org_id:
+    #     raise RuntimeError("User ID and Organization ID are required")
 
     try:
         # Get inputs
@@ -825,7 +788,6 @@ def createsmartmarketlayer(**kwargs):
         )
         project_json_str = project_json_bytes.decode("utf-8")
         project_data = json.loads(project_json_str)
-        
 
         # Initialize layers if not present
         if "layers" not in project_data:
@@ -882,19 +844,46 @@ def createsmartmarketlayer(**kwargs):
         # Add or update layer in project data
         project_data["layers"][layer_id] = new_layer
 
-        # Update project.json in Supabase
-        updated_json_str = json.dumps(project_data, separators=(',', ':'))
-        supabase.storage.from_("projects").update(
-            f"{project_id}/project.json?t={timestamp}", updated_json_str.encode("utf-8")
+        # Convert project data to base64 for the update API
+        encoded_data = base64.b64encode(json.dumps(project_data, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).decode('utf-8')
+
+        # Create JWT token with required claims
+        jwt_secret = Variable.get("JWT_SECRET")
+        jwt_claims = {
+            "sub": user_id,  # Required by Supabase - user ID
+            "app_metadata": {
+                "organizations": {
+                    org_id: {
+                        "id": org_id,
+                        "role": "owner"  # Or whatever role is appropriate
+                    }
+                }
+            },
+            "exp": int(time.time()) + 3600  # 1 hour expiry
+        }
+        access_token = jwt.encode(jwt_claims, jwt_secret, algorithm="HS256")
+
+        # Make request to project update API
+        import requests
+        response = requests.post(
+            f"{Variable.get('SMART_FLOWS_API_URL')}/project/{project_id}/update",
+            json={
+                "encoded_data": encoded_data,
+                "workflow_id": workflow_id
+            },
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
         )
+
+        if not response.ok:
+            raise RuntimeError(f"Failed to update project: {response.text}")
 
         return {"result": layer_id}
 
     except Exception as e:
         raise RuntimeError(f"Failed to create smart market layer: {str(e)}")
-    finally:
-        # Always release the lock when done
-        release_lock()
 
 
 def bbox(**kwargs):
@@ -1576,7 +1565,13 @@ def filters(**kwargs):
         try:
             # get type of field column from postgres
             engine = get_db_engine_lepton()
-            column_type = engine.execute(f'SELECT data_type FROM information_schema.columns WHERE table_name = \'{feature_collection}\' AND column_name = \'{attribute}\'').scalar()
+            with engine.connect() as connection:
+                # Execute and fetch result within the context
+                column_type = connection.execute(
+                    'SELECT data_type FROM information_schema.columns WHERE table_name = %s AND column_name = %s',
+                    (feature_collection, attribute)
+                ).scalar()
+                
             if column_type in ['numeric', 'integer', 'float']:
                 float(value)  # Check if value can be converted to number
                 where_clause = f'"{attribute}" {operator_map[operator]} {value}'
@@ -1642,7 +1637,6 @@ def demographic(**kwargs):
             "subcategories": subcategories,
         },
     )
-
     # Check if cached result exists
     engine = get_db_engine_lepton()
     if table_exists(engine, output_table_name):
@@ -1694,27 +1688,26 @@ def demographic(**kwargs):
 
     # Prepare API request payload
     payload = {"features": features, "subcategories": subcategories}
-    print("payload", payload)
+
+    # Get API key using the user-based method
+    api_key = node.get_api_key_from_user()
 
     # Call Lepton API
     try:
         response = requests.post(
             "https://api.leptonmaps.com/v1/geojson/residential/demographics/get_demo",
             headers={
-                "X-API-Key": Variable.get("LEPTON_API_KEY"),
+                "X-API-Key": api_key,
                 "Content-Type": "application/json",
             },
             json=payload,
         )
-
         if not response.ok:
             raise RuntimeError(
                 f"API request failed with status {response.status_code}: {response.text}"
             )
 
         data = response.json()
-
-        print("demographic data", data)
 
         if not isinstance(data, list) or not data:
             raise ValueError("Invalid response format from API")
@@ -1858,12 +1851,15 @@ def countpoi(**kwargs):
         "subcategories": decoded_subcategories,
     }
 
+    # Get API key using the user-based method
+    api_key = node.get_api_key_from_user()
+
     # Call Lepton API
     try:
         response = requests.post(
             "https://api.leptonmaps.com/v1/geojson/places/place_insights",
             headers={
-                "X-API-Key": Variable.get("LEPTON_API_KEY"),
+                "X-API-Key": api_key,
                 "Content-Type": "application/json",
             },
             json=payload,
@@ -1953,7 +1949,9 @@ def boundaries(**kwargs):
         return {"output": output_table_name, "is_cached": True}
 
     try:
-        api_key = Variable.get("LEPTON_API_KEY")
+        # Get API key using the user-based method
+        api_key = node.get_api_key_from_user()
+        print("api_key", api_key)
         base_url = "https://api.leptonmaps.com/v1/geojson/regions"
 
         # Configure endpoint and parameters based on boundary type
@@ -2021,7 +2019,6 @@ def boundaries(**kwargs):
             raise RuntimeError(f"API request failed: {error_message}")
 
         geojson_data = response.json()
-        print("geojson_data", geojson_data)
         # Convert GeoJSON to GeoDataFrame
         df = gpd.GeoDataFrame.from_features(geojson_data["features"])
 
@@ -2202,7 +2199,6 @@ def aggregation(**kwargs):
         "is_cached": is_cached
     }
 
-
 def difference(**kwargs):
     """
     Performs spatial difference between two polygon layers and optionally scales numeric
@@ -2325,7 +2321,9 @@ def dissolve(**kwargs):
     dissolve_columns = node.input("dissolveColumns", [])  # Optional: columns to dissolve by
     aggregations = node.input("aggregations", [])  # Optional: list of aggregation objects
     is_touched = node.input("isTouched", False)  # Optional: dissolve touching polygons
-    api_key = Variable.get("LEPTON_API_KEY")  # Get from variable
+    
+    # Get API key using the user-based method
+    api_key = node.get_api_key_from_user()
 
     print("aggregations", aggregations)
     print("dissolve_columns", dissolve_columns)
@@ -2653,11 +2651,10 @@ def placesinsights(**kwargs):
     if table_exists(engine, output_table_name):
         return {"output": output_table_name, "is_cached": True}
 
-
-    # Get API key
-    api_key = Variable.get("LEPTON_API_KEY")
+    # Get API key using the user-based method
+    api_key = node.get_api_key_from_user()
     if not api_key:
-        raise ValueError("LEPTON_API_KEY not found in Airflow variables")
+        raise ValueError("No API key available. Please check your authentication.")
 
     # Initialize database connection
     engine = get_db_engine_lepton()
@@ -3132,7 +3129,10 @@ def tolls(**kwargs):
 
     # Create combined journey parameter
     journey_param = f"{vehicle_type}_{journey_type}"
-
+    
+    # Get API key using the user-based method
+    api_key = node.get_api_key_from_user()
+    
     try:
         # Make API request
         response = requests.get(
@@ -3145,7 +3145,7 @@ def tolls(**kwargs):
                 "include_booths": "true",
                 "include_booths_locations": "true"
             },
-            headers={"X-API-Key": Variable.get("LEPTON_API_KEY")}
+            headers={"X-API-Key": api_key}
         )
         response.raise_for_status()
         data = response.json()
