@@ -308,6 +308,8 @@ services:
         airflow variables set SMART_FLOWS_DB_URL ${APP_URL}/base/flows-db
         airflow variables set SMART_MARKET_API_URL http://${APP_NAME}-smart-market:3000
         airflow variables set LEPTON_API_KEY ${PUBLIC_LEPTON_MAPS_API_KEY}
+        airflow variables set JWT_SECRET ${JWT_SECRET}
+        airflow variables set SMART_FLOWS_API_URL http://${APP_NAME}-flows-api:80
         airflow connections add 'smart_market_db' --conn-uri ${DATABASE_URL}
         airflow connections add 'workflows_db' --conn-uri ${DATABASE_URL}
         exit 0
