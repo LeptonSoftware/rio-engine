@@ -1,0 +1,188 @@
+version: '3.8'
+name: ${API_NAME}
+
+services:
+  # postgrest:
+  #   image: postgrest/postgrest:latest
+  #   container_name: postgrest_59
+  #   restart: always
+  #   environment:
+  #     PGRST_DB_URI: postgresql://postgres:Alexandr1a@192.168.1.59:5432/leptonmaps
+  #     PGRST_DB_SCHEMA: workflows
+  #     PGRST_DB_ANON_ROLE: postgres
+  #     PGRST_JWT_SECRET: 08ZBGlNK+b0esh5a67N9VTsfWp8UUl53YAJl/rWRNdTPycfBGDz/C+/SnE9QsmNZl9WnQxb4wFRaPMHJ4gWHxg==
+  #   networks:
+  #     - deployed-containers
+  #   labels:
+  #     - traefik.enable=true
+  #     - traefik.http.services.flow-server.loadbalancer.responseforwarding.flushinterval=-1
+  #     - traefik.http.routers.flow-server.entrypoints=web #@@
+  #     - traefik.http.routers.flow-server.priority=3
+  #     - traefik.http.routers.flow-server.rule=PathPrefix(`/base/flows/v1/db`)
+  #     # - traefik.http.routers.flow-server.tls.certresolver=myresolver ###########
+  #     - traefik.http.services.flow-server.loadbalancer.server.port=3000
+  #     - "traefik.http.middlewares.flow-server-cors.headers.accesscontrolallowmethods=GET,OPTIONS,PUT,POST,DELETE,PATCH"
+  #     - "traefik.http.middlewares.flow-server-cors.headers.accesscontrolallowheaders=*"
+  #     - "traefik.http.middlewares.flow-server-cors.headers.accesscontrolalloworiginlist=*"
+  #     - "traefik.http.middlewares.flow-server-cors.headers.accesscontrolmaxage=100"
+  #     - "traefik.http.middlewares.flow-server-cors.headers.addvaryheader=true"
+  #     - "traefik.http.middlewares.flow-server-strip-prefix.stripprefix.prefixes=/base/flows/v1/db"
+  #     - "traefik.http.routers.flow-server.middlewares=flow-server-cors,flow-server-strip-prefix"
+
+  app:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    environment:
+      - BASE=/
+    #   - DEPLOYMENT_COLOR=${IDLE_COLOR}
+    #   - GRAPHHOPPER_API_HOST=graphhopper
+    #   - OTEL_SERVICE_NAME=smart-signal-api
+    #   - OTEL_TRES_EXPORTER=otlp
+    #   - OTEL_METRICS_EXPORTER=
+    #   - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://jaeger:4318/v1/traces
+    #   - OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
+    image: leptonworld/${API_NAME}:latest
+    restart: always
+    expose:
+      - 80
+    networks:
+      - deployed-containers
+    volumes:
+      - .:/app
+      - ./data:/data
+      - ../dags/workflows/generated_dags:/workflows/generated_dags
+      - ../dags/lib:/app/nodes/lib
+      - ../dags/workflows:/app/nodes/workflows
+    entrypoint: uvicorn main:api --host 0.0.0.0 --port 80 --reload
+    # entrypoint: gunicorn --workers 1 -b 0.0.0.0:80 -k uvicorn.workers.UvicornWorker --timeout 50000 main:api
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${API_NAME}.rule=Host(`api.smart-flows.rio.software`)
+      - traefik.http.routers.${API_NAME}.priority=2
+      - traefik.http.routers.${API_NAME}.entrypoints=websecure
+      # - traefik.http.routers.${API_NAME}.entrypoints=websecure
+      - traefik.http.routers.${API_NAME}.tls.certresolver=myresolver
+      - traefik.http.services.${API_NAME}.loadbalancer.server.port=80
+      - traefik.http.services.${API_NAME}.loadbalancer.healthcheck.path=/health
+      - traefik.http.services.${API_NAME}.loadbalancer.healthcheck.port=80
+      - traefik.http.services.${API_NAME}.loadbalancer.healthcheck.timeout=20s
+      - traefik.http.services.${API_NAME}.loadbalancer.healthcheck.interval=60s
+      - "traefik.http.middlewares.${API_NAME}-cors.headers.accesscontrolallowmethods=GET,OPTIONS,PUT,POST,DELETE,PATCH"
+      - "traefik.http.middlewares.${API_NAME}-cors.headers.accesscontrolallowheaders=*"
+      - "traefik.http.middlewares.${API_NAME}-cors.headers.accesscontrolalloworiginlist=*"
+      - "traefik.http.middlewares.${API_NAME}-cors.headers.accesscontrolmaxage=100"
+      - "traefik.http.middlewares.${API_NAME}-cors.headers.addvaryheader=true"
+      # - "traefik.http.middlewares.${API_NAME}-strip-prefix.stripprefix.prefixes=/base/flows/v1"
+      - "traefik.http.routers.${API_NAME}.middlewares=${API_NAME}-cors"
+      # cors headers
+
+      # - traefik.http.middlewares.${API_NAME}-strip-version.stripprefix.prefixes=/v1
+      #vi-opennw- - traefik.http.routers.${API_NAME}.middlewares=${API_NAME}-strip-version
+  
+  app-prod:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    environment:
+      - BASE=/
+    #   - DEPLOYMENT_COLOR=${IDLE_COLOR}
+    #   - GRAPHHOPPER_API_HOST=graphhopper
+    #   - OTEL_SERVICE_NAME=smart-signal-api
+    #   - OTEL_TRES_EXPORTER=otlp
+    #   - OTEL_METRICS_EXPORTER=
+    #   - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://jaeger:4318/v1/traces
+    #   - OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
+    image: leptonworld/${API_NAME}:latest
+    restart: always
+    expose:
+      - 80
+    networks:
+      - deployed-containers
+    volumes:
+      - .:/app
+      - ./data:/data
+      - ../dags/workflows/generated_dags:/workflows/generated_dags
+      - ../dags/lib:/app/nodes/lib
+      - ../dags/workflows:/app/nodes/workflows
+    # entrypoint: uvicorn main:api --host 0.0.0.0 --port 80 --reload
+    entrypoint: gunicorn --workers 1 -b 0.0.0.0:80 -k uvicorn.workers.UvicornWorker --timeout 50000 main:api
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${API_NAME}-prod.rule=Host(`api.flows.smartmarket.ai`)
+      - traefik.http.routers.${API_NAME}-prod.priority=2
+      - traefik.http.routers.${API_NAME}-prod.entrypoints=websecure
+      # - traefik.http.routers.${API_NAME}.entrypoints=websecure
+      - traefik.http.routers.${API_NAME}-prod.tls.certresolver=myresolver
+      - traefik.http.services.${API_NAME}-prod.loadbalancer.server.port=80
+      - traefik.http.services.${API_NAME}-prod.loadbalancer.healthcheck.path=/health
+      - traefik.http.services.${API_NAME}-prod.loadbalancer.healthcheck.port=80
+      - traefik.http.services.${API_NAME}-prod.loadbalancer.healthcheck.timeout=20s
+      - traefik.http.services.${API_NAME}-prod.loadbalancer.healthcheck.interval=60s
+      - "traefik.http.middlewares.${API_NAME}-cors-prod.headers.accesscontrolallowmethods=GET,OPTIONS,PUT,POST,DELETE,PATCH"
+      - "traefik.http.middlewares.${API_NAME}-cors-prod.headers.accesscontrolallowheaders=*"
+      - "traefik.http.middlewares.${API_NAME}-cors-prod.headers.accesscontrolalloworiginlist=*"
+      - "traefik.http.middlewares.${API_NAME}-cors-prod.headers.accesscontrolmaxage=100"
+      - "traefik.http.middlewares.${API_NAME}-cors-prod.headers.addvaryheader=true"
+      # - "traefik.http.middlewares.${API_NAME}-strip-prefix.stripprefix.prefixes=/base/flows/v1"
+      - "traefik.http.routers.${API_NAME}-prod.middlewares=${API_NAME}-cors-prod"
+      # cors headers
+
+      # - traefik.http.middlewares.${API_NAME}-strip-version.stripprefix.prefixes=/v1
+      # - traefik.http.routers.${API_NAME}.middlewares=${API_NAME}-strip-version
+
+  app-lepton:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    environment:
+      - BASE=/flows/
+    #   - DEPLOYMENT_COLOR=${IDLE_COLOR}
+    #   - GRAPHHOPPER_API_HOST=graphhopper
+    #   - OTEL_SERVICE_NAME=smart-signal-api
+    #   - OTEL_TRES_EXPORTER=otlp
+    #   - OTEL_METRICS_EXPORTER=
+    #   - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://jaeger:4318/v1/traces
+    #   - OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
+    image: leptonworld/${API_NAME}:latest
+    restart: always
+    expose:
+      - 80
+    networks:
+      - deployed-containers
+    volumes:
+      - .:/app
+      - ./data:/data
+      - ../dags/workflows/generated_dags:/workflows/generated_dags
+      - ../dags/lib:/app/nodes/lib
+      - ../dags/workflows:/app/nodes/workflows
+    # entrypoint: uvicorn main:api --host 0.0.0.0 --port 80 --reload
+    entrypoint: gunicorn --workers 1 -b 0.0.0.0:80 -k uvicorn.workers.UvicornWorker --timeout 50000 main:api
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${API_NAME}-lepton.rule=Host(`api.leptonmaps.com`) && PathPrefix(`/flows/`)
+      - traefik.http.routers.${API_NAME}-lepton.priority=2
+      - traefik.http.routers.${API_NAME}-lepton.entrypoints=websecure
+      # - traefik.http.routers.${API_NAME}.entrypoints=websecure
+      - traefik.http.routers.${API_NAME}-lepton.tls.certresolver=myresolver
+      - traefik.http.services.${API_NAME}-lepton.loadbalancer.server.port=80
+      - traefik.http.services.${API_NAME}-lepton.loadbalancer.healthcheck.path=/health
+      - traefik.http.services.${API_NAME}-lepton.loadbalancer.healthcheck.port=80
+      - traefik.http.services.${API_NAME}-lepton.loadbalancer.healthcheck.timeout=20s
+      - traefik.http.services.${API_NAME}-lepton.loadbalancer.healthcheck.interval=60s
+      - "traefik.http.middlewares.${API_NAME}-cors-lepton.headers.accesscontrolallowmethods=GET,OPTIONS,PUT,POST,DELETE,PATCH"
+      - "traefik.http.middlewares.${API_NAME}-cors-lepton.headers.accesscontrolallowheaders=*"
+      - "traefik.http.middlewares.${API_NAME}-cors-lepton.headers.accesscontrolalloworiginlist=*"
+      - "traefik.http.middlewares.${API_NAME}-cors-lepton.headers.accesscontrolmaxage=100"
+      - "traefik.http.middlewares.${API_NAME}-cors-lepton.headers.addvaryheader=true"
+      # - "traefik.http.middlewares.${API_NAME}-strip-prefix.stripprefix.prefixes=/base/flows/v1"
+      - "traefik.http.routers.${API_NAME}-lepton.middlewares=${API_NAME}-cors-lepton,${API_NAME}-lepton-strip-prefix"
+      - "traefik.http.middlewares.${API_NAME}-lepton-strip-prefix.stripprefix.prefixes=/flows"
+      # cors headers
+
+      # - traefik.http.middlewares.${API_NAME}-strip-version.stripprefix.prefixes=/v1
+      # - traefik.http.routers.${API_NAME}.middlewares=${API_NAME}-strip-version
+
+networks:
+  deployed-containers:
+    external: true
