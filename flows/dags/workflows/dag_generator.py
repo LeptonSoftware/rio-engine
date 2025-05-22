@@ -13,10 +13,20 @@ default_param_values = {
     "boolean": False,
     "object": {},
     "array": [],
+    "user_id": "",
+    "org_id": "",
 }
 
 def create_params(params):
-    return {param["name"]: Param(default_param_values[param["type"]], type=param["type"]) for param in params}
+    """Create Airflow Param objects from a list of parameter definitions."""
+    airflow_params = {}
+    for param in params:
+        param_name = param["name"]
+        param_type = param["type"]
+        # Use the 'default' value from the param dict if provided, otherwise use the global default
+        default_value = param.get("default", default_param_values.get(param_type))
+        airflow_params[param_name] = Param(default_value, type=param_type)
+    return airflow_params
 
 def generate_dag_tasks(dag, workflow_config):
     """Create DAG from workflow configuration"""

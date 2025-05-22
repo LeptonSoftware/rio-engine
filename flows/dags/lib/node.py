@@ -31,37 +31,40 @@ from shapely import from_wkb, Polygon as ShapelyPolygon
 
 def table_exists(engine, table_name):
     # First check if the table exists in the cache tracking table
-    cache_valid = engine.execute("""
-        SELECT is_valid 
-        FROM workflows.cache_entries 
-        WHERE table_name = %s
-        AND is_valid = true
-    """, (table_name,)).scalar()
-    
-    if cache_valid:
-        # Check if the actual table exists
-        table_exists = engine.execute(
-            f"SELECT to_regclass('workflows.\"{table_name}\"')"
-        ).fetchone()
-        if table_exists[0]:
-            # Check and update geometry column SRID if needed
-            with engine.begin() as connection:
+    with engine.connect() as connection:
+        # Execute and fetch cache validity check within the context
+        cache_valid = connection.execute("""
+            SELECT is_valid 
+            FROM workflows.cache_entries 
+            WHERE table_name = %s
+            AND is_valid = true
+        """, (table_name,)).scalar()
+        
+        if cache_valid:
+            # Execute and fetch table existence check within the same context
+            table_exists = connection.execute(
+                f"SELECT to_regclass('workflows.\"{table_name}\"')"
+            ).scalar()
+            
+            if table_exists:
+                # Check and update geometry column SRID if needed
                 if check_tile_json(table_name, connection):
                     connection.execute(
                         f'ALTER TABLE workflows."{table_name}" ALTER COLUMN geometry TYPE geometry(geometry, 4326) USING ST_SetSRID(geometry::geometry, 4326);'
                     )
-            print(f"Using cached table workflows.{table_name}")
-            return True
+                print(f"Using cached table workflows.{table_name}")
+                return True
     return False
 
 def invalidate_cache(engine, table_name):
     """Invalidate cache for a specific table"""
-    engine.execute("""
-        UPDATE workflows.cache_entries 
-        SET is_valid = false, 
-            invalidated_at = NOW() 
-        WHERE table_name = %s
-    """, (table_name,))
+    with engine.connect() as connection:
+        connection.execute("""
+            UPDATE workflows.cache_entries 
+            SET is_valid = false, 
+                invalidated_at = NOW() 
+            WHERE table_name = %s
+        """, (table_name,))
 
 def track_cache(connection, table_name):
     """Add or update cache tracking entry"""
@@ -79,8 +82,10 @@ def track_cache(connection, table_name):
 
 def get_column_names(engine, table_name):
     query = f"SELECT column_name FROM information_schema.columns WHERE table_schema = 'workflows' AND table_name = '{table_name}'"
-    result = engine.execute(query)
-    return [row[0] for row in result]
+    with engine.connect() as connection:
+        # Execute and fetch all results within the context
+        result = connection.execute(query).fetchall()
+        return [row[0] for row in result]
 
 def check_tile_json(table_name, connection):
     query = f"""SELECT
@@ -118,11 +123,10 @@ def check_tile_json(table_name, connection):
 		AND c.relname = '{table_name}' AND n.nspname = 'workflows'
 	ORDER BY 1"""
     print("query", query)
-    result = connection.execute(text(query))
-    print("result", result.fetchall())
-    if result.rowcount == 0:
-        return True
-    return False
+    # Execute and fetch all results within the same connection context
+    result = connection.execute(text(query)).fetchall()
+    print("result", result)
+    return len(result) == 0
 
 
 class Node:
@@ -148,7 +152,8 @@ class Node:
         Priority order:
         1. Direct data input
         2. Connected node output
-        3. Default value
+        3. DAG parameters
+        4. Default value
         
         Args:
             input_name: Name of the input to retrieve
@@ -196,6 +201,16 @@ class Node:
                         print(f"Warning: Error getting data from connection: {str(e)}")
                         continue
         
+        # Check DAG parameters if available (this is the new part)
+        dag_run = self.kwargs.get("dag_run")
+        if dag_run and hasattr(dag_run, "conf"):
+            # First check if params dict exists in conf
+            if "params" in dag_run.conf and input_name in dag_run.conf["params"]:
+                return dag_run.conf["params"][input_name]
+            # Then check conf directly
+            elif input_name in dag_run.conf:
+                return dag_run.conf[input_name]
+        
         # If we reach here, no valid input was found
         if default is not None:
             return default
@@ -222,7 +237,46 @@ class Node:
         output_table_name = hashlib.md5((func_name + inputs).encode()).hexdigest()
         return output_table_name
 
-  
+    def get_api_key(self, workflow_id):
+        from lib.db import get_db_engine_workflows as fn
+        engine = fn()
+        result = engine.execute("""
+            SELECT api_key FROM workflow_api_key WHERE workflow_id = %s
+        """, (workflow_id,)).scalar()
+        return result
+
+    def get_api_key_from_user(self):
+        """Get API key based on user_id and org_id from DAG parameters"""
+        from lib.db import get_db_engine_workflows as fn
+        from airflow.models import Variable
+        engine = fn()
+        
+        try:
+            lepton_api_key = Variable.get("LEPTON_API_KEY")
+            if lepton_api_key:
+                return lepton_api_key
+        except KeyError:
+            # Variable doesn't exist, continue with fallback
+            pass
+        
+        # Try to get user_id and org_id from parameters
+        user_id = self.params("user_id", "")
+        org_id = self.params("org_id", "")
+        
+        print("user_id", user_id)
+        print("org_id", org_id)
+        # Validate user_id before querying
+        if not user_id:
+            print("Warning: No user_id provided")
+            return None
+        
+        # Query the database for API key based on user_id
+        result = engine.execute("""
+            SELECT api_key FROM hits 
+            WHERE user_id = %s LIMIT 1
+        """, (user_id,)).scalar()
+            
+        return result
 
     def compute_in_db(
         self,
@@ -241,88 +295,84 @@ class Node:
         exclude_col.append("_gid")
         
         # Check cache validity
-        cache_valid = engine.execute("""
-            SELECT is_valid 
-            FROM workflows.cache_entries 
-            WHERE table_name = %s
-        """, (output_table_name,)).scalar()
+        with engine.connect() as connection:
+            # Execute and fetch cache validity check within the context
+            cache_valid = connection.execute("""
+                SELECT is_valid 
+                FROM workflows.cache_entries 
+                WHERE table_name = %s
+            """, (output_table_name,)).scalar()
         
-        print("cache_valid", cache_valid)
-        print("table_exists", table_exists(engine, output_table_name))
-        # If cache exists but is invalid, drop the table
-        if cache_valid is False:
-            engine.execute(f'DROP TABLE IF EXISTS workflows."{output_table_name}"')
-        elif table_exists(engine, output_table_name):
-            if cache_valid is True:
-                print("using value from cache")
-                return output_table_name, True
-            else:
-                print("using value from db")
-                return output_table_name, False
-            
-        try:
-            columns = get_column_names(engine, input_table_name)
-            print("columns::::::::", columns)
-            if exclude_col:
-                columns = [
-                    f'"{input_table_name}"."{col}"'
-                    for col in columns
-                    if col not in exclude_col
-                ]
-                valid_columns = ", ".join(columns)
+            print("cache_valid", cache_valid)
+            print("table_exists", table_exists(engine, output_table_name))
+            # If cache exists but is invalid, drop the table
+            if cache_valid is False:
+                connection.execute(f'DROP TABLE IF EXISTS workflows."{output_table_name}"')
+            elif table_exists(engine, output_table_name):
+                if cache_valid is True:
+                    print("using value from cache")
+                    return output_table_name, True
+                else:
+                    print("using value from db")
+                    return output_table_name, False
                 
-                if valid_columns and replace_query_columns:
-                    actual_query = query.replace("SELECT ", f"SELECT {valid_columns}, ")
-                    print(actual_query)
+            try:
+                columns = get_column_names(engine, input_table_name)
+                print("columns::::::::", columns)
+                if exclude_col:
+                    columns = [
+                        f'"{input_table_name}"."{col}"'
+                        for col in columns
+                        if col not in exclude_col
+                    ]
+                    valid_columns = ", ".join(columns)
+                    
+                    if valid_columns and replace_query_columns:
+                        actual_query = query.replace("SELECT ", f"SELECT {valid_columns}, ")
+                        print(actual_query)
+                    else:
+                        actual_query = query
                 else:
                     actual_query = query
-            else:
-                actual_query = query
-            
-            
-            # Start a transaction
-            with engine.begin() as connection:
-                print(f'CREATE TABLE workflows."{output_table_name}" AS ({actual_query})')
-                connection.execute(
-                    f'CREATE TABLE workflows."{output_table_name}" AS ({actual_query})'
-                )
                 
-                if check_tile_json(output_table_name, connection):
-                    connection.execute(
-                        f'ALTER TABLE workflows."{output_table_name}" ALTER COLUMN geometry TYPE geometry(geometry, 4326) USING ST_SetSRID(geometry::geometry, 4326);'
-                    )
-                
-                connection.execute(
-                    f'GRANT ALL ON TABLE workflows."{output_table_name}" TO authenticated;'
-                )
-                
-                if add_gid:
-                    connection.execute(
-                        f'ALTER TABLE workflows."{output_table_name}" ADD COLUMN IF NOT EXISTS "_gid" SERIAL;'
-                    )
-                    connection.execute(
-                        f'CREATE INDEX idx_{output_table_name}_gid ON workflows."{output_table_name}" USING HASH("_gid");'
-                    )
-                    print("index created for _gid")
-                
-                if geom_col:
-                    for geom in geom_col:
-                        print(f"Creating index for {geom}")
-                        connection.execute(
-                            f'CREATE INDEX IF NOT EXISTS idx_{output_table_name}_{geom} ON workflows."{output_table_name}" USING GIST ({geom})'
+                # Start a transaction
+                with engine.begin() as transaction:
+                    print(f'CREATE TABLE workflows."{output_table_name}" AS ({actual_query})')
+                    transaction.execute(text(f'CREATE TABLE workflows."{output_table_name}" AS ({actual_query})'))
+                    
+                    if check_tile_json(output_table_name, transaction):
+                        transaction.execute(
+                            f'ALTER TABLE workflows."{output_table_name}" ALTER COLUMN geometry TYPE geometry(geometry, 4326) USING ST_SetSRID(geometry::geometry, 4326);'
                         )
-                        print(f"Created index for {geom}")
+                    
+                    transaction.execute(
+                        f'GRANT ALL ON TABLE workflows."{output_table_name}" TO authenticated;'
+                    )
+                    
+                    if add_gid:
+                        transaction.execute(
+                            f'ALTER TABLE workflows."{output_table_name}" ADD COLUMN IF NOT EXISTS "_gid" SERIAL;'
+                        )
+                        transaction.execute(
+                            f'CREATE INDEX idx_{output_table_name}_gid ON workflows."{output_table_name}" USING HASH("_gid");'
+                        )
+                        print("index created for _gid")
+                    
+                    if geom_col:
+                        for geom in geom_col:
+                            print(f"Creating index for {geom}")
+                            transaction.execute(
+                                f'CREATE INDEX IF NOT EXISTS idx_{output_table_name}_{geom} ON workflows."{output_table_name}" USING GIST ({geom})'
+                            )
+                            print(f"Created index for {geom}")
 
-                # Track the new cache entry within the same transaction
-                track_cache(connection, output_table_name)
-                print(f"Created table {output_table_name}")
-                
-                # The transaction will be automatically committed if no exceptions occur
-                # If any operation fails, the entire transaction will be rolled back
-                
-            return output_table_name, False
-        except Exception as e:
-            raise ValueError(f"Error creating table {output_table_name}: {str(e)}")
+                    # Track the new cache entry within the same transaction
+                    track_cache(transaction, output_table_name)
+                    print(f"Created table {output_table_name}")
+                    
+                return output_table_name, False
+            except Exception as e:
+                raise ValueError(f"Error creating table {output_table_name}: {str(e)}")
 
     def parse_google_response(self, geocoded):
         """Helper function to parse Google geocoding response"""
@@ -361,27 +411,31 @@ class Node:
         engine = get_db_engine_lepton()
         
         # Check cache validity
-        cache_valid = engine.execute("""
-            SELECT is_valid 
-            FROM workflows.cache_entries 
-            WHERE table_name = %s
-        """, (table_name,)).scalar()
+        with engine.connect() as connection:
+            # Execute and fetch cache validity check within the context
+            cache_valid = connection.execute("""
+                SELECT is_valid 
+                FROM workflows.cache_entries 
+                WHERE table_name = %s
+            """, (table_name,)).scalar()
         
-        # If cache exists but is invalid, drop the table
-        if cache_valid is False:
-            engine.execute(f'DROP TABLE IF EXISTS workflows."{table_name}"')
-        elif cache_valid is True and table_exists(engine, table_name):
-            print("using value from cache")
-            return table_name, True
+            # If cache exists but is invalid, drop the table
+            if cache_valid is False:
+                connection.execute(f'DROP TABLE IF EXISTS workflows."{table_name}"')
+            elif cache_valid is True and table_exists(engine, table_name):
+                print("using value from cache")
+                return table_name, True
 
         try:
             print(f"Saving data to Postgres table: {table_name}")
             if df.crs is None:
                 df.set_crs("EPSG:4326", inplace=True)
             df.to_postgis(table_name, engine, schema="workflows")
-            engine.execute(f'GRANT ALL ON TABLE workflows."{table_name}" TO authenticated;')
-            # Track the new cache entry
-            track_cache(engine, table_name)
+            
+            with engine.connect() as connection:
+                connection.execute(f'GRANT ALL ON TABLE workflows."{table_name}" TO authenticated;')
+                # Track the new cache entry
+                track_cache(connection, table_name)
             print(f"Saved data to Postgres table: {table_name}")
         except Exception as e:
             raise ValueError(f"ERR: {str(e)}")
@@ -755,7 +809,7 @@ class Node:
 #         for point in points:
 #             feature = {
 #                 "type": "Feature",
-#                 "geometry": {"type": "Point", "coordinates": [point.x, point.y]},
+#                 "geometry": {"type": "Point", "coordinates": [point[0], point[1]]},
 #                 "properties": {},
 #             }
 #             features.append(feature)

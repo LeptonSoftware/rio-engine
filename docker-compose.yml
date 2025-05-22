@@ -18,7 +18,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
     AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: 1
     AIRFLOW_UID: ${AIRFLOW_UID:-1000}
-    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    _PIP_ADDITIONAL_REQUIREMENTS: "apache-airflow-providers-google tqdm"
     PYTHONPATH: /home/airflow/.local/lib/python3.12/site-packages
     AIRFLOW__WEBSERVER__BASE_URL: /base/airflow
   volumes:
@@ -100,6 +100,8 @@ services:
       - config_file=/etc/postgresql/postgresql.conf
       - -c
       - log_min_messages=fatal
+      - -c
+      - max_connections=1000 
     restart: unless-stopped
     environment:
       POSTGRES_HOST: /var/run/postgresql
@@ -134,7 +136,7 @@ services:
       PGRST_DB_SCHEMA: workflows
       PGRST_DB_ANON_ROLE: postgres
       PGRST_JWT_SECRET: ${JWT_SECRET}
-      PGRST_DB_PREPARED_STATEMENTS: "false"  # Disable prepared statements
+      PGRST_DB_PREPARED_STATEMENTS: "false" # Disable prepared statements
     ports:
       - "${SMART_FLOWS_POSTGREST_PORT}:3000"
     depends_on:
@@ -147,7 +149,7 @@ services:
     build:
       context: ./
       dockerfile: Dockerfile
-    image: ${SMART_FLOWS_API_IMAGE}
+    image: leptonworld/smart-flows-api:local
     container_name: ${SMART_FLOWS_API_CONTAINER_NAME}
     restart: always
     environment:
@@ -160,10 +162,13 @@ services:
       - lepton
     volumes:
       # - ./data:/data
+      - ${SMART_FLOWS_BASE_DIR}/api:/app
       - ${SMART_FLOWS_BASE_DIR}/dags/workflows/generated_dags:/workflows/generated_dags
       - ${SMART_FLOWS_BASE_DIR}/dags/lib:/app/nodes/lib
       - ${SMART_FLOWS_BASE_DIR}/dags/workflows:/app/nodes/workflows
-    entrypoint: gunicorn --workers 1 -b 0.0.0.0:80 -k uvicorn.workers.UvicornWorker --timeout 50000 main:api
+
+    # entrypoint: gunicorn --workers 1 -b 0.0.0.0:80 -k uvicorn.workers.UvicornWorker --timeout 50000 main:api
+    entrypoint: uvicorn main:api --host 0.0.0.0 --port 80 --reload
 
   airflow-postgres:
     container_name: ${AIRFLOW_POSTGRES_CONTAINER_NAME}

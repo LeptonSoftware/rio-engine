@@ -11,6 +11,9 @@ from supabase import create_client
 import time
 from shapely import wkt
 from shapely.geometry import Point
+import base64
+import jwt
+from sqlalchemy import text
 
 
 def get_db_engine_workflows():
@@ -65,7 +68,7 @@ def geocode(**kwargs):
     node = Node(**kwargs)
     feature_collection_key = node.input("featureCollection")
     provider = node.input("provider", "lepton")
-    # Get the API key from data or environment
+    
     if provider == "google":
         # Query to get coordinates from input features
         engine = get_db_engine_lepton()
@@ -78,16 +81,19 @@ def geocode(**kwargs):
             query = f"""
                 SELECT {select_columns} latitude, longitude
                 FROM workflows."{feature_collection_key}"
+                WHERE latitude IS NOT NULL AND longitude IS NOT NULL
             """
         elif "latitude" in columns:
             query = f"""
                 SELECT {select_columns} latitude, ST_X(geometry) as longitude
                 FROM workflows."{feature_collection_key}"
+                WHERE latitude IS NOT NULL AND geometry IS NOT NULL
             """
         elif "longitude" in columns:
             query = f"""
                 SELECT {select_columns} ST_Y(geometry) as latitude, longitude
                 FROM workflows."{feature_collection_key}"
+                WHERE longitude IS NOT NULL AND geometry IS NOT NULL
             """
         else:
             query = f"""
@@ -95,6 +101,7 @@ def geocode(**kwargs):
                     ST_X(ST_Centroid(geometry)) as longitude, 
                     ST_Y(ST_Centroid(geometry)) as latitude
                 FROM workflows."{feature_collection_key}"
+                WHERE geometry IS NOT NULL
             """
         df = gpd.read_postgis(query, engine, geom_col="geometry")
         print(df.head())
@@ -253,10 +260,14 @@ def geocode(**kwargs):
             return locality_data
 
         try:
+            # Get API key using the user-based method
+            api_key = node.get_api_key_from_user()
+            print("API key for geocode: ", api_key)
+            
             response = requests.post(
                 "https://api.leptonmaps.com/v1/detect/locality",
                 json=post_data,
-                headers={"X-API-Key": Variable.get("LEPTON_API_KEY")},
+                headers={"X-API-Key": api_key},
                 timeout=30,  # Set timeout to prevent hanging requests
             )
             response.raise_for_status()  # Raise error for non-200 responses
@@ -336,6 +347,7 @@ def geocode(**kwargs):
 
 
 def alias(**kwargs):
+    from lib.node import track_cache
     node = Node(**kwargs)
     db = get_db_engine_lepton()
     alias = node.input("alias")
@@ -344,15 +356,20 @@ def alias(**kwargs):
     # if alias is already a table, leave it as is
     if table_exists(db, alias):
         return {"output": alias, "is_cached": False}
-    # if a view with the same name already exists, drop it
-    db.execute(f'DROP VIEW IF EXISTS workflows."{alias}"')
-    db.execute(f'CREATE VIEW workflows."{alias}" AS SELECT * FROM workflows."{input_table}"')
+    
+    # Use a connection context manager to ensure proper cleanup
+    with db.connect() as connection:
+        # Drop existing view if it exists
+        connection.execute(f'DROP VIEW IF EXISTS workflows."{alias}"')
+        # Create new view
+        connection.execute(f'CREATE VIEW workflows."{alias}" AS SELECT * FROM workflows."{input_table}"')
+        # Track the cache entry for the view
+        track_cache(connection, alias)
+
     return {"output": alias, "is_cached": False}
 
 def buffer(**kwargs):
     node = Node(**kwargs)
-    # columns = node.get_column_names(get_db_engine_lepton(), f'{node.input('featureCollection')}')
-    # valid_columns = [f'"{col}"' for col in columns if col not in ['geometry']]
     input_table = node.input("featureCollection")
     output_table_name, is_cached = node.compute_in_db(
         func_name="buffer",
@@ -360,7 +377,15 @@ def buffer(**kwargs):
             "distance": node.input("distance"),
             "featureCollection": input_table,
         },
-        query=f'SELECT ST_Buffer(geometry::geography, {node.input("distance", 100)}) AS geometry FROM workflows."{input_table}"',
+        query=f'''
+            SELECT 
+                CASE 
+                    WHEN "{input_table}".geometry IS NULL THEN NULL
+                    ELSE ST_Buffer("{input_table}".geometry::geography, {node.input("distance", 100)})
+                END AS geometry
+            FROM workflows."{input_table}"
+            WHERE "{input_table}".geometry IS NOT NULL
+        ''',
         geom_col=["geometry"],
         exclude_col=["geometry"],
         input_table_name=input_table,
@@ -437,6 +462,7 @@ def _import_data_source(node, source: str):
         feature_dict = {**properties, 'geometry': geometry}
         features_list.append(feature_dict)
     
+    print("features_list: ", features_list)
     # Create GeoDataFrame
     df = gpd.GeoDataFrame(features_list, geometry='geometry', crs="EPSG:4326")
     # df = gpd.GeoDataFrame(geojson_data, geometry='geometry', crs="EPSG:4326")
@@ -604,8 +630,10 @@ def get_column_defs(table_name):
         WHERE table_schema = 'workflows' 
         AND table_name = %s
     """
-    result = engine.execute(query, (table_name,))
-    return {row[0]: row[1] for row in result}
+    with engine.connect() as connection:
+        # Execute and fetch all results within the context
+        result = connection.execute(query, (table_name,)).fetchall()
+        return {row[0]: row[1] for row in result}
 
 def catchment(**kwargs):
     from airflow.models import Variable
@@ -679,21 +707,28 @@ def catchment(**kwargs):
             "accuracy_time_based": accuracy_time_based,
             "departure_time": departure_time,
         }
+        # Get API key using new method that supports user_id and org_id
+        api_key = node.get_api_key_from_user()
+        print("api_key: ", api_key)
         params = {k: v for k, v in all_params.items() if v is not None}
         print("paramas: ", params)
         url = base_url + "?" + urlencode(params)
         print(url, params)
         response = requests.get(
             url,
-            headers={"x-api-key": Variable.get("LEPTON_API_KEY")},
+            headers={"x-api-key": api_key},
         )
 
         if response.ok:
             data = response.json()
-            print(data)
             features = data.get("features", [])
             if features:
-                return shape(features[0]["geometry"])
+                geometry = features[0].get("geometry")
+                if geometry is None:
+                    # Create an empty geometry using shapely
+                    from shapely.geometry import Polygon
+                    return Polygon([])  # Empty polygon instead of None
+                return shape(geometry)
             return None
         return None
 
@@ -730,7 +765,6 @@ def catchment(**kwargs):
         results = list(executor.map(parallel_catchment, (r for _, r in df.iterrows())))
 
     df["geometry"] = results
-    print(df["geometry"])
     is_cached = node.save_df_to_postgres(df, output_table_name)
 
     return {"output": output_table_name, "is_cached": is_cached}
@@ -738,65 +772,97 @@ def catchment(**kwargs):
 
 def createsmartmarketlayer(**kwargs):
     from airflow.models import Variable
+    import base64
+    import jwt
+    import time
+    from sqlalchemy import text
 
     node = Node(**kwargs)
     project_id = node.input("project_id")
-    workflow_id = kwargs.get("workflow_id")
-    replace_existing = node.input("replaceExisting", False)  # New input parameter
+    style = node.input("style", {})
+    workflow_id = node.input("workflow_id", "")
+    replace_existing = node.input("replaceExisting", False)
+
+    if(workflow_id == ""):
+        workflow_id = kwargs.get("workflow_id")
+    # Get user_id and org_id from the node parameters
+    user_id = node.params("user_id")
+    org_id = node.params("org_id")
+
+    if not user_id or not org_id:
+        raise RuntimeError("User ID and Organization ID are required")
+
+    # Initialize engine for lock management
     engine = get_db_engine_workflows()
+    
+    # Generate unique lock identifiers
+    unique_lock_id = f"project_{project_id}_{int(time.time() * 1000)}"
+    unique_locker_id = f"createsmartmarketlayer_{user_id}"
 
-    # Generate unique identifiers
-    unique_lock_id = f"smartmarket_{project_id}_{int(time.time() * 1000)}"
-    unique_locker_id = f"{kwargs.get('node_id')}"
-
-    # Try to acquire lock
     def acquire_lock():
         try:
-            # Check if any active locks exist
-            result = engine.execute(
-                """
-                SELECT COUNT(*) 
-                FROM process_locks 
-                WHERE workflow_id = %s
-            """,
-                (workflow_id),
-            ).scalar()
+            with engine.begin() as connection:
+                print(f"Attempting to acquire lock for project_id: {project_id}")
+                
+                # Check for existing locks
+                query = text("""
+                    SELECT COUNT(*) 
+                    FROM process_locks 
+                    WHERE project_id = :project_id
+                    """)
+                
+                result = connection.execute(
+                    query,
+                    {"project_id": project_id}
+                ).scalar()
 
-            print(result)
+                if result > 0:
+                    print(f"Lock acquisition failed - {result} existing locks found")
+                    return False
 
-            if result > 0:
-                return False
-
-            # Create new lock
-            engine.execute(
-                """
-                INSERT INTO process_locks (lock_id, locked_by, project_id, workflow_id)
-                VALUES (%s, %s, %s, %s)
-            """,
-                (unique_lock_id, unique_locker_id, project_id, workflow_id),
-            )
-
-            return True
+                # Create new lock
+                insert_query = text("""
+                    INSERT INTO process_locks (lock_id, locked_by, project_id, workflow_id)
+                    VALUES (:lock_id, :locked_by, :project_id, :workflow_id)
+                    """)
+                
+                connection.execute(
+                    insert_query,
+                    {
+                        "lock_id": unique_lock_id,
+                        "locked_by": unique_locker_id,
+                        "project_id": project_id,
+                        "workflow_id": workflow_id
+                    }
+                )
+                # Transaction will be committed automatically when the with block exits
+                print(f"Lock successfully acquired with lock_id: {unique_lock_id}")
+                return True
+                
         except Exception as e:
-            print(f"Error acquiring lock: {e}")
+            print(f"Error acquiring lock: {str(e)}")
             return False
 
-    # Release lock
     def release_lock():
         try:
-            engine.execute(
-                """
-                DELETE FROM process_locks 
-                WHERE lock_id = %s AND locked_by = %s
-            """,
-                (unique_lock_id, unique_locker_id),
-            )
-            print("Lock released")
+            with engine.begin() as connection:
+                connection.execute(
+                    text("""
+                    DELETE FROM process_locks 
+                    WHERE lock_id = :lock_id AND locked_by = :locked_by
+                    """),
+                    {
+                        "lock_id": unique_lock_id,
+                        "locked_by": unique_locker_id
+                    }
+                )
+                # Transaction will be committed automatically when the with block exits
+                print("Lock released")
         except Exception as e:
             print(f"Error releasing lock: {e}")
 
     # Wait for lock with timeout
-    max_attempts = 30  # 30 seconds timeout
+    max_attempts = 300
     attempt = 0
     while not acquire_lock():
         time.sleep(1)
@@ -810,12 +876,11 @@ def createsmartmarketlayer(**kwargs):
         layer_name = node.input("layer_name")
         feature_collection_key = node.input("data")
 
-        # Generate a base layer ID using the layer name
-        base_layer_id = layer_name
-
+        print(f"feature_collection_key: {feature_collection_key}")
         # Initialize Supabase client
         supabase = create_client(
-            Variable.get("SUPABASE_URL"), Variable.get("SUPABASE_KEY")
+            Variable.get("SUPABASE_URL"), 
+            Variable.get("SUPABASE_KEY")
         )
 
         # Download and decode existing project.json
@@ -825,27 +890,41 @@ def createsmartmarketlayer(**kwargs):
         )
         project_json_str = project_json_bytes.decode("utf-8")
         project_data = json.loads(project_json_str)
-        
 
         # Initialize layers if not present
         if "layers" not in project_data:
             project_data["layers"] = {}
 
-        # Handle duplicate layer names
+        # Initialize layer groups if not present
+        if "layerGroups" not in project_data:
+            project_data["layerGroups"] = {}
+
+        # Add flows layer group if it doesn't exist
+        if "flows" not in project_data["layerGroups"]:
+            project_data["layerGroups"]["flows"] = {
+                "id": "flows",
+                "name": "Flows",
+                "open": True,
+                "defaultOpen": True,
+                "order": -1
+            }
+
+        # Handle layer ID and name
+        base_layer_id = layer_name
         layer_id = base_layer_id
         if layer_id in project_data["layers"]:
             if replace_existing:
                 # Keep the same layer_id, it will be overwritten
                 pass
             else:
-                # Find the next available suffix
+                # Find next available suffix
                 suffix = 1
                 while f"{layer_id}_{suffix}" in project_data["layers"]:
                     suffix += 1
                 layer_id = f"{layer_id}_{suffix}"
                 layer_name = f"{layer_name} ({suffix})"
 
-        # Create layer source data
+        # Create layer source and new layer
         layer_source = {
             "type": "geojson_postgrest",
             "db": {
@@ -855,45 +934,75 @@ def createsmartmarketlayer(**kwargs):
                 "select": "*",
                 "schema": "workflows",
             },
-            "workflow_id": kwargs["workflow_id"],
+            "workflow_id": workflow_id,
         }
 
-        # Create new layer info
+        print(f"layer_source: {layer_source}")
+
+        # Parse style to check for featureType property
+        feature_type = "geojson"  # Default value
+        if style and isinstance(style, dict) and "featureType" in style:
+            feature_type = style["featureType"]
+
         new_layer = {
             "id": layer_id,
             "name": layer_name,
-            "source": json.dumps(layer_source,separators=(',', ':')),
-            "style": json.dumps(
-                {
-                    "strokeWidth": 2,
-                    "strokeColor": "#3B82F6",
-                    "fillColor": "#93C5FD",
-                    "fillOpacity": 0.5,
-                    "strokeOpacity": 1,
-                    "tooltipProperties": [],
-                }, separators=(',', ':')
-            ),
-            "featureType": "geojson",
+            "source": json.dumps(layer_source, separators=(',', ':')),
+            "style": json.dumps(style, separators=(',', ':')),
+            "featureType": feature_type,
             "layerGroupId": "flows",
             "geometryType": "polygon",
             "visible": True,
         }
 
-        # Add or update layer in project data
+        # Add layer to project data
         project_data["layers"][layer_id] = new_layer
 
-        # Update project.json in Supabase
-        updated_json_str = json.dumps(project_data, separators=(',', ':'))
-        supabase.storage.from_("projects").update(
-            f"{project_id}/project.json?t={timestamp}", updated_json_str.encode("utf-8")
+        # Create JWT token
+        jwt_secret = Variable.get("JWT_SECRET")
+        jwt_claims = {
+            "sub": user_id,
+            "app_metadata": {
+                "organizations": {
+                    org_id: {
+                        "id": org_id,
+                        "role": "owner"
+                    }
+                }
+            },
+            "exp": int(time.time()) + 3600
+        }
+        access_token = jwt.encode(jwt_claims, jwt_secret, algorithm="HS256")
+
+        # Convert project data to base64
+        encoded_data = base64.b64encode(
+            json.dumps(project_data, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+        ).decode('utf-8')
+
+        # Make request to project update API
+        response = requests.post(
+            f"{Variable.get('SMART_FLOWS_API_URL')}/project/{project_id}/update",
+            json={
+                "encoded_data": encoded_data,
+                "workflow_id": workflow_id,
+                "is_node_update": True
+            },
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            },
+            timeout=300
         )
+
+        if not response.ok:
+            raise RuntimeError(f"Failed to update project: {response.text}")
 
         return {"result": layer_id}
 
     except Exception as e:
         raise RuntimeError(f"Failed to create smart market layer: {str(e)}")
     finally:
-        # Always release the lock when done
+        # Always release the lock
         release_lock()
 
 
@@ -901,14 +1010,40 @@ def bbox(**kwargs):
     print("Creating bounding box")
     node = Node(**kwargs)
     input_table = node.input("input")
+    
+    # First, create a table with a single row containing the bounding box for all geometries
+    query = f'''
+        WITH bbox AS (
+            -- Get the bounding box of all geometries combined
+            SELECT 
+                ST_Envelope(ST_Extent(geometry)) AS bbox_geometry
+            FROM workflows."{input_table}"
+            WHERE geometry IS NOT NULL
+        ),
+        -- Get first row from input to preserve attributes (excluding geometry)
+        first_feature AS (
+            SELECT 
+                {', '.join([f'"{col}"' for col in get_column_names(get_db_engine_lepton(), input_table) if col != 'geometry'])}
+            FROM workflows."{input_table}" 
+            LIMIT 1
+        )
+        -- Combine them
+        SELECT 
+            f.*, -- All columns from first feature (except geometry)
+            b.bbox_geometry AS geometry -- Use the bounding box as the geometry
+        FROM first_feature f
+        CROSS JOIN bbox b
+    '''
+    
     output_table_name, is_cached = node.compute_in_db(
         func_name="bbox",
         inputs={"input": input_table},
-        query=f'SELECT ST_Envelope(geometry) AS geometry FROM workflows."{input_table}"',
+        query=query,
         geom_col=["geometry"],
         input_table_name=input_table,
-        exclude_col=["geometry"],
+        replace_query_columns=False
     )
+    
     return {
         "output": output_table_name,
         "is_cached": is_cached,
@@ -932,10 +1067,14 @@ def intersection(**kwargs):
         query = f"""
             SELECT 
                 {select_cols},
-                ST_Intersection(a.geometry, b.geometry) AS geometry
+                CASE 
+                    WHEN a.geometry IS NULL OR b.geometry IS NULL THEN NULL
+                    ELSE ST_Intersection(a.geometry, b.geometry)
+                END AS geometry
             FROM workflows."{input_table_name_a}" a
             JOIN workflows."{input_table_name_b}" b
                 ON ST_Intersects(a.geometry, b.geometry)
+            WHERE a.geometry IS NOT NULL AND b.geometry IS NOT NULL
             """
     else:
         input_table_name = input_table_name_b
@@ -945,10 +1084,14 @@ def intersection(**kwargs):
         query = f"""
             SELECT 
                 {select_cols},
-                ST_Intersection(a.geometry, b.geometry) AS geometry
+                CASE 
+                    WHEN a.geometry IS NULL OR b.geometry IS NULL THEN NULL
+                    ELSE ST_Intersection(a.geometry, b.geometry)
+                END AS geometry
             FROM workflows."{input_table_name_a}" a
             JOIN workflows."{input_table_name_b}" b
                 ON ST_Intersects(a.geometry, b.geometry)
+            WHERE a.geometry IS NOT NULL AND b.geometry IS NOT NULL
             """
     print(query)
     output_table_name, is_cached = node.compute_in_db(
@@ -976,7 +1119,15 @@ def centroid(**kwargs):
     input_table = node.input("input")
     output_table_name, is_cached = node.compute_in_db(
         func_name="centroid",
-        query=f'SELECT ST_Centroid("{input_table}".geometry) AS geometry FROM workflows."{input_table}"',
+        query=f'''
+            SELECT 
+                CASE 
+                    WHEN "{input_table}".geometry IS NULL THEN NULL
+                    ELSE ST_Centroid("{input_table}".geometry)
+                END AS geometry
+            FROM workflows."{input_table}"
+            WHERE geometry IS NOT NULL
+        ''',
         inputs={"input": input_table},
         geom_col=["geometry"],
         input_table_name=input_table,
@@ -1576,7 +1727,13 @@ def filters(**kwargs):
         try:
             # get type of field column from postgres
             engine = get_db_engine_lepton()
-            column_type = engine.execute(f'SELECT data_type FROM information_schema.columns WHERE table_name = \'{feature_collection}\' AND column_name = \'{attribute}\'').scalar()
+            with engine.connect() as connection:
+                # Execute and fetch result within the context
+                column_type = connection.execute(
+                    'SELECT data_type FROM information_schema.columns WHERE table_name = %s AND column_name = %s',
+                    (feature_collection, attribute)
+                ).scalar()
+                
             if column_type in ['numeric', 'integer', 'float']:
                 float(value)  # Check if value can be converted to number
                 where_clause = f'"{attribute}" {operator_map[operator]} {value}'
@@ -1642,7 +1799,6 @@ def demographic(**kwargs):
             "subcategories": subcategories,
         },
     )
-
     # Check if cached result exists
     engine = get_db_engine_lepton()
     if table_exists(engine, output_table_name):
@@ -1694,27 +1850,26 @@ def demographic(**kwargs):
 
     # Prepare API request payload
     payload = {"features": features, "subcategories": subcategories}
-    print("payload", payload)
+
+    # Get API key using the user-based method
+    api_key = node.get_api_key_from_user()
 
     # Call Lepton API
     try:
         response = requests.post(
             "https://api.leptonmaps.com/v1/geojson/residential/demographics/get_demo",
             headers={
-                "X-API-Key": Variable.get("LEPTON_API_KEY"),
+                "X-API-Key": api_key,
                 "Content-Type": "application/json",
             },
             json=payload,
         )
-
         if not response.ok:
             raise RuntimeError(
                 f"API request failed with status {response.status_code}: {response.text}"
             )
 
         data = response.json()
-
-        print("demographic data", data)
 
         if not isinstance(data, list) or not data:
             raise ValueError("Invalid response format from API")
@@ -1858,12 +2013,15 @@ def countpoi(**kwargs):
         "subcategories": decoded_subcategories,
     }
 
+    # Get API key using the user-based method
+    api_key = node.get_api_key_from_user()
+
     # Call Lepton API
     try:
         response = requests.post(
             "https://api.leptonmaps.com/v1/geojson/places/place_insights",
             headers={
-                "X-API-Key": Variable.get("LEPTON_API_KEY"),
+                "X-API-Key": api_key,
                 "Content-Type": "application/json",
             },
             json=payload,
@@ -1953,7 +2111,8 @@ def boundaries(**kwargs):
         return {"output": output_table_name, "is_cached": True}
 
     try:
-        api_key = Variable.get("LEPTON_API_KEY")
+        # Get API key using the user-based method
+        api_key = node.get_api_key_from_user()
         base_url = "https://api.leptonmaps.com/v1/geojson/regions"
 
         # Configure endpoint and parameters based on boundary type
@@ -2021,7 +2180,6 @@ def boundaries(**kwargs):
             raise RuntimeError(f"API request failed: {error_message}")
 
         geojson_data = response.json()
-        print("geojson_data", geojson_data)
         # Convert GeoJSON to GeoDataFrame
         df = gpd.GeoDataFrame.from_features(geojson_data["features"])
 
@@ -2202,7 +2360,6 @@ def aggregation(**kwargs):
         "is_cached": is_cached
     }
 
-
 def difference(**kwargs):
     """
     Performs spatial difference between two polygon layers and optionally scales numeric
@@ -2255,6 +2412,7 @@ def difference(**kwargs):
     # Build area ratio expression
     ratio_expr = """
         CASE 
+            WHEN b.geometry IS NULL THEN 0
             WHEN ST_Area(b.geometry::geography) = 0 THEN 0 
             ELSE ST_Area(
                 ST_Difference(
@@ -2272,10 +2430,13 @@ def difference(**kwargs):
 
     # Add the new geometry
     geom_expr = """
-        ST_Difference(
-            b.geometry, 
-            COALESCE(ST_Union(s.geometry::geometry), ST_GeomFromText('POLYGON EMPTY', 4326))
-        ) AS geometry
+        CASE 
+            WHEN b.geometry IS NULL THEN NULL
+            ELSE ST_Difference(
+                b.geometry, 
+                COALESCE(ST_Union(s.geometry::geometry), ST_GeomFromText('POLYGON EMPTY', 4326))
+            )
+        END AS geometry
     """
     select_parts.append(geom_expr)
     
@@ -2288,6 +2449,7 @@ def difference(**kwargs):
         FROM workflows."{base_layer}" b
         LEFT JOIN workflows."{subtract_layer}" s
             ON ST_Intersects(b.geometry, s.geometry)
+        WHERE b.geometry IS NOT NULL
         GROUP BY {', '.join(f'b."{col}"' for col in base_columns)}
     """
 
@@ -2313,22 +2475,12 @@ def difference(**kwargs):
 
 
 def dissolve(**kwargs):
-    from airflow.models import Variable
-    """
-    Performs dissolve operation on polygon features with optional attribute-based dissolving
-    and aggregation of numeric columns
-    """
     node = Node(**kwargs)
-
-    # Get inputs
     base_layer = node.input("baseLayer")
-    dissolve_columns = node.input("dissolveColumns", [])  # Optional: columns to dissolve by
-    aggregations = node.input("aggregations", [])  # Optional: list of aggregation objects
-    is_touched = node.input("isTouched", False)  # Optional: dissolve touching polygons
-    api_key = Variable.get("LEPTON_API_KEY")  # Get from variable
+    is_touched = node.input("isTouched", False)
+    dissolve_columns = node.input("dissolveColumns", [])
+    aggregations = node.input("aggregations", [])
 
-    print("aggregations", aggregations)
-    print("dissolve_columns", dissolve_columns)
     print("is_touched", is_touched)
     print("base_layer", base_layer)
     if not base_layer:
@@ -2339,6 +2491,14 @@ def dissolve(**kwargs):
     # Get data from postgres and convert to CSV 
     query = f'SELECT * FROM workflows."{base_layer}"'
     df = gpd.read_postgis(query, engine, geom_col='geometry')
+    
+    # Drop rows with null geometries
+    if df['geometry'].isna().any():
+        print(f"Warning: Dropping {df['geometry'].isna().sum()} rows with null geometries")
+        df = df.dropna(subset=['geometry'])
+        
+    if len(df) == 0:
+        raise ValueError("No valid geometries found in the input layer after removing null values")
     
     # Convert geometry to WKT
     df['geometry'] = df['geometry'].apply(lambda x: x.wkt)
@@ -2377,7 +2537,7 @@ def dissolve(**kwargs):
 
     headers = {
         "Content-Type": "application/json",
-        "X-API-Key": api_key
+        "X-API-Key": node.get_api_key_from_user()
     }
 
     try:
@@ -2630,6 +2790,7 @@ def placesinsights(**kwargs):
     aggregate_by = node.input("aggregateBy", [])
     place_types = node.input("placeTypes", [])
     include_review_ratings = node.input("include_review_ratings", False)
+    country = node.input("country", "places_insights___in")
 
     # Validate inputs
     if not selected_categories:
@@ -2644,7 +2805,8 @@ def placesinsights(**kwargs):
             "activeFilters": active_filters,
             "aggregateBy": aggregate_by,
             "placeTypes": place_types,
-            "includeReviewRatings": include_review_ratings
+            "includeReviewRatings": include_review_ratings,
+            "country": country
         }
     )
 
@@ -2653,11 +2815,10 @@ def placesinsights(**kwargs):
     if table_exists(engine, output_table_name):
         return {"output": output_table_name, "is_cached": True}
 
-
-    # Get API key
-    api_key = Variable.get("LEPTON_API_KEY")
+    # Get API key using the user-based method
+    api_key = node.get_api_key_from_user()
     if not api_key:
-        raise ValueError("LEPTON_API_KEY not found in Airflow variables")
+        raise ValueError("No API key available. Please check your authentication.")
 
     # Initialize database connection
     engine = get_db_engine_lepton()
@@ -2714,7 +2875,7 @@ def placesinsights(**kwargs):
             "type": "Feature",
             "properties": {
                 "uniqueId": str(idx),
-                "geoId": str(idx)
+                "geoId": str(idx),
             },
             "geometry": geom.__geo_interface__
         }
@@ -2725,11 +2886,13 @@ def placesinsights(**kwargs):
         "subcategories": selected_categories,
         "aggregate_by": aggregate_by,
         "include_review_ratings": str(include_review_ratings).lower(),
+        "country": country,
         "input_geometry": [{
             "type": "FeatureCollection",
             "features": features
         }],
-        **filter_params
+        **filter_params,
+        "table_name": country
     }
 
     # Make API request
@@ -2800,6 +2963,7 @@ def proximity(**kwargs):
     target_layer = node.input("targetLayer")
     attributes = node.input("attributes", [])  # Optional list of attributes to transfer
     unit = node.input("unit", "km")  # Default to kilometers
+    is_drive_distance = node.input("isDriveDistance", False)
 
     if not base_layer:
         raise ValueError("Base layer must be provided")
@@ -2815,7 +2979,8 @@ def proximity(**kwargs):
             "baseLayer": base_layer,
             "targetLayer": target_layer,
             "attributes": attributes,
-            "unit": unit
+            "unit": unit,
+            "isDriveDistance": is_drive_distance
         }
     )
 
@@ -2851,7 +3016,8 @@ def proximity(**kwargs):
                 "features": json.loads(base_df.to_json())["features"]
             },
             "unit": unit,
-            "layerId": "_gid"
+            "layerId": "_gid",
+            "is_drive_distance": is_drive_distance
         }
     else:
         # Use nearest_with_details API for different layers
@@ -2867,7 +3033,8 @@ def proximity(**kwargs):
             },
             "unit": unit,
             "layer1_id": "_gid",
-            "attrs_layer2": attributes
+            "attrs_layer2": attributes,
+            "is_drive_distance": is_drive_distance
         }
 
     try:
@@ -3132,7 +3299,10 @@ def tolls(**kwargs):
 
     # Create combined journey parameter
     journey_param = f"{vehicle_type}_{journey_type}"
-
+    
+    # Get API key using the user-based method
+    api_key = node.get_api_key_from_user()
+    
     try:
         # Make API request
         response = requests.get(
@@ -3145,7 +3315,7 @@ def tolls(**kwargs):
                 "include_booths": "true",
                 "include_booths_locations": "true"
             },
-            headers={"X-API-Key": Variable.get("LEPTON_API_KEY")}
+            headers={"X-API-Key": api_key}
         )
         response.raise_for_status()
         data = response.json()

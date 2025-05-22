@@ -41,3 +41,9 @@ def get_db_engine_workflows() :
     from airflow.hooks.base import BaseHook
     conn = BaseHook.get_connection('smart_market_db')
     return create_engine(f'postgresql://{conn.login}:{conn.password}@{conn.host}:{conn.port}/{conn.schema}')
+
+def get_db_engine_traffic_data() : 
+    """Create and return a database engine for the traffic data database."""
+    from airflow.hooks.base import BaseHook
+    conn = BaseHook.get_connection('lepton_db')
+    return create_engine(f'postgresql://{conn.login}:{conn.password}@{conn.host}:{conn.port}/{conn.schema}')

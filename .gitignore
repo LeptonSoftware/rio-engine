@@ -1,3 +1,6 @@
 *.pyc
 /logs
 flows/dags/workflows/generated_dags/
+flows/dags/traffic_data/
+flows/dags/traffic_data/traffic_data_big_query_etl.py
+
