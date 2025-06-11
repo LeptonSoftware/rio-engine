@@ -272,7 +272,7 @@ class Node:
         
         # Query the database for API key based on user_id
         result = engine.execute("""
-            SELECT api_key FROM hits 
+            SELECT api_key FROM api_keys 
             WHERE user_id = %s LIMIT 1
         """, (user_id,)).scalar()
             
@@ -338,7 +338,9 @@ class Node:
                 # Start a transaction
                 with engine.begin() as transaction:
                     print(f'CREATE TABLE workflows."{output_table_name}" AS ({actual_query})')
-                    transaction.execute(text(f'CREATE TABLE workflows."{output_table_name}" AS ({actual_query})'))
+                    transaction.execute(
+                        f'CREATE TABLE workflows."{output_table_name}" AS ({actual_query})'
+                    )
                     
                     if check_tile_json(output_table_name, transaction):
                         transaction.execute(

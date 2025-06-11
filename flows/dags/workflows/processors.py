@@ -14,6 +14,8 @@ from shapely.geometry import Point
 import base64
 import jwt
 from sqlalchemy import text
+import base64
+import jwt
 
 
 def get_db_engine_workflows():
@@ -776,6 +778,8 @@ def createsmartmarketlayer(**kwargs):
     import jwt
     import time
     from sqlalchemy import text
+    import base64
+    import jwt
 
     node = Node(**kwargs)
     project_id = node.input("project_id")
@@ -2477,10 +2481,15 @@ def difference(**kwargs):
 def dissolve(**kwargs):
     node = Node(**kwargs)
     base_layer = node.input("baseLayer")
-    is_touched = node.input("isTouched", False)
-    dissolve_columns = node.input("dissolveColumns", [])
-    aggregations = node.input("aggregations", [])
+    dissolve_columns = node.input("dissolveColumns", [])  # Optional: columns to dissolve by
+    aggregations = node.input("aggregations", [])  # Optional: list of aggregation objects
+    is_touched = node.input("isTouched", False)  # Optional: dissolve touching polygons
+    
+    # Get API key using the user-based method
+    api_key = node.get_api_key_from_user()
 
+    print("aggregations", aggregations)
+    print("dissolve_columns", dissolve_columns)
     print("is_touched", is_touched)
     print("base_layer", base_layer)
     if not base_layer:
