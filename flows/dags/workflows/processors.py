@@ -46,6 +46,25 @@ def sql(**kwargs):
         lambda x: f'workflows."{node.input(x.group(1))}" as {x.group(1)}',
         query,
     )
+    try:
+        parsed = sqlglot.parse(query)
+        if len(parsed) > 1:
+            raise Exception(
+                "Query contains multiple statements, only single statement allowed."
+            )
+        query = parsed[0] if parsed else None
+        if query is None:
+            raise Exception("Query could not be parsed.")
+            # Check if the root expression is a SELECT statement
+        if not isinstance(query, sqlglot.exp.Select):
+            raise Exception("Only SELECT statements are allowed.")
+
+        for table in query.find_all(sqlglot.exp.Table):
+            if not (table.db and table.db.lower() == "workflows"):
+                raise Exception(f"Table {table.sql()} is not allowed.")
+        query = str(query)
+    except ParseError:
+        raise Exception("Query could not be parsed.")
     print(query)
     table_name, is_cached = node.compute_in_db(
         func_name="sql", query=query, inputs={"query": query}
