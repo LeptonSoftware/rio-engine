@@ -49,7 +49,9 @@ def sql(**kwargs):
     try:
         parsed = sqlglot.parse(query)
         if len(parsed) > 1:
-            raise Exception("Query contains multiple statements, only single statement allowed.")
+            raise Exception(
+                "Query contains multiple statements, only single statement allowed."
+            )
         query = parsed[0] if parsed else None
         if query is None:
             raise Exception("Query could not be parsed.")
@@ -57,10 +59,9 @@ def sql(**kwargs):
         if not isinstance(query, sqlglot.exp.Select):
             raise Exception("Only SELECT statements are allowed.")
 
-        for table in query.find_all(sqlglot.exp.Schema):
-        # Skip dynamic tables, which are in the "workflows" schema.
-            if table.name.lower() not in ["workflows"]:
-                raise Exception(f"Table {table.name} is not allowed.")
+        for table in query.find_all(sqlglot.exp.Table):
+            if not (table.db and table.db.lower() == "workflows"):
+                raise Exception(f"Table {table.sql()} is not allowed.")
         query = str(query)
     except ParseError:
         raise Exception("Query could not be parsed.")
