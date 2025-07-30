@@ -13,7 +13,8 @@ from shapely import wkt
 from shapely.geometry import Point
 import base64
 import jwt
-
+import sqlglot
+from sqlglot.errors import ParseError
 
 def get_db_engine_workflows():
     # import from lib.db and call that
@@ -38,6 +39,80 @@ def sql(**kwargs):
     # we need to replace them with the actual table names from the node.input, we should only request the tables that are used in the query
     # we can do this by parsing the query and replacing the table names with the actual table names
     # we can use the re module to do this
+
+    import re
+
+    pattern = r"\$(t\d+)"
+    query, _ = re.subn(
+        pattern,
+        lambda x: f'workflows."{node.input(x.group(1))}" as {x.group(1)}',
+        query,
+    )
+    postgis_functions = [
+        "ST_GeomFromText",
+        "ST_GeomFromGeoJSON",
+        "ST_MakePoint",
+        "ST_MakeLine",
+        "ST_MakePolygon",
+        "ST_Intersects",
+        "ST_Within",
+        "ST_Contains",
+        "ST_Distance",
+        "ST_Buffer",
+        "ST_Union",
+        "ST_Area",
+        "ST_Length",
+        "ST_Envelope",
+        "ST_Transform",
+        "ST_SnapToGrid",
+        "ST_AsGeoJSON",
+        "ST_AsText",
+        "ST_AsBinary",
+        "ST_CreateIndex",
+    ]
+    # Common PostgreSQL Functions
+    postgres_functions = [
+        "LENGTH",
+        "CONCAT",
+        "SUBSTRING",
+        "UPPER",
+        "LOWER",
+        "TRIM",
+        "REPLACE",
+        "POSITION",
+        "CHAR_LENGTH",
+        "CURRENT_DATE",
+        "CURRENT_TIMESTAMP",
+        "DATE_PART",
+        "AGE",
+        "NOW",
+        "EXTRACT",
+        "ABS",
+        "ROUND",
+        "CEIL",
+        "FLOOR",
+        "POWER",
+        "RANDOM",
+        "MOD",
+        "GREATEST",
+        "LEAST",
+        "COUNT",
+        "SUM",
+        "AVG",
+        "MIN",
+        "MAX",
+        "GROUP_CONCAT",
+        "STRING_AGG",
+        "CASE",
+        "COALESCE",
+        "NULLIF",
+        "ARRAY",
+        "ARRAY_LENGTH",
+        "UNNEST",
+        "ARRAY_AGG",
+    ]
+    # Combine both lists into one whitelist
+    ALLOWED_FUNCTIONS = postgis_functions + postgres_functions
     import re
 
     pattern = r"\$(t\d+)"
@@ -59,9 +134,18 @@ def sql(**kwargs):
         if not isinstance(query, sqlglot.exp.Select):
             raise Exception("Only SELECT statements are allowed.")
 
-        for table in query.find_all(sqlglot.exp.Table):
+        tables = list(query.find_all(sqlglot.exp.Table))
+        if not tables:
+            raise Exception(
+                "Query must reference at least one table in the workflows schema."
+            )
+        for table in tables:
             if not (table.db and table.db.lower() == "workflows"):
-                raise Exception(f"Table {table.sql()} is not allowed.")
+                raise Exception("Invalid table reference found")
+
+        for func in query.find_all(sqlglot.exp.Func):
+            if func.name.upper() not in ALLOWED_FUNCTIONS:
+                raise Exception(f"Function {func.name} is not allowed.")
         query = str(query)
     except ParseError:
         raise Exception("Query could not be parsed.")
