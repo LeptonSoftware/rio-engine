@@ -39,15 +39,6 @@ def sql(**kwargs):
     # we need to replace them with the actual table names from the node.input, we should only request the tables that are used in the query
     # we can do this by parsing the query and replacing the table names with the actual table names
     # we can use the re module to do this
-
-    import re
-
-    pattern = r"\$(t\d+)"
-    query, _ = re.subn(
-        pattern,
-        lambda x: f'workflows."{node.input(x.group(1))}" as {x.group(1)}',
-        query,
-    )
     postgis_functions = [
         "ST_GeomFromText",
         "ST_GeomFromGeoJSON",
@@ -113,6 +104,7 @@ def sql(**kwargs):
     ]
     # Combine both lists into one whitelist
     ALLOWED_FUNCTIONS = postgis_functions + postgres_functions
+    
     import re
 
     pattern = r"\$(t\d+)"
@@ -157,6 +149,7 @@ def sql(**kwargs):
         "output": table_name,
         "is_cached": is_cached,
     }
+
 
 
 # Node processors
