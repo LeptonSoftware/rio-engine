@@ -1,6 +1,3 @@
-create extension if not exists "kiwicopple-pg_idkit" with schema "extensions";
-
-
 create schema if not exists "external_services";
 
 create table "external_services"."api_key_credits" (
@@ -157,9 +154,6 @@ END;$function$
 ;
 
 CREATE TRIGGER update_api_key_credit_cost_trigger BEFORE INSERT OR UPDATE OF consumed ON external_services.api_key_credits FOR EACH ROW EXECUTE FUNCTION external_services.update_api_key_credit_cost();
-
-
-create extension if not exists "supabase-dbdev" with schema "public" version '0.0.5';
 
 create sequence "public"."workflow_node_runs_id_seq";
 
