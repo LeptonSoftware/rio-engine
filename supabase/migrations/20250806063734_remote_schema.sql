@@ -1,3 +1,6 @@
+create extension if not exists "kiwicopple-pg_idkit" with schema "extensions";
+
+
 set check_function_bodies = off;
 
 CREATE OR REPLACE FUNCTION external_services.update_api_key_credit_cost()
@@ -68,397 +71,7 @@ END;$function$
 ;
 
 
-revoke delete on table "public"."api_org" from "anon";
-
-revoke insert on table "public"."api_org" from "anon";
-
-revoke references on table "public"."api_org" from "anon";
-
-revoke select on table "public"."api_org" from "anon";
-
-revoke trigger on table "public"."api_org" from "anon";
-
-revoke truncate on table "public"."api_org" from "anon";
-
-revoke update on table "public"."api_org" from "anon";
-
-revoke delete on table "public"."api_org" from "authenticated";
-
-revoke insert on table "public"."api_org" from "authenticated";
-
-revoke references on table "public"."api_org" from "authenticated";
-
-revoke select on table "public"."api_org" from "authenticated";
-
-revoke trigger on table "public"."api_org" from "authenticated";
-
-revoke truncate on table "public"."api_org" from "authenticated";
-
-revoke update on table "public"."api_org" from "authenticated";
-
-revoke delete on table "public"."api_org" from "service_role";
-
-revoke insert on table "public"."api_org" from "service_role";
-
-revoke references on table "public"."api_org" from "service_role";
-
-revoke select on table "public"."api_org" from "service_role";
-
-revoke trigger on table "public"."api_org" from "service_role";
-
-revoke truncate on table "public"."api_org" from "service_role";
-
-revoke update on table "public"."api_org" from "service_role";
-
-revoke delete on table "public"."api_org" from "supabase_auth_admin";
-
-revoke insert on table "public"."api_org" from "supabase_auth_admin";
-
-revoke references on table "public"."api_org" from "supabase_auth_admin";
-
-revoke select on table "public"."api_org" from "supabase_auth_admin";
-
-revoke trigger on table "public"."api_org" from "supabase_auth_admin";
-
-revoke truncate on table "public"."api_org" from "supabase_auth_admin";
-
-revoke update on table "public"."api_org" from "supabase_auth_admin";
-
-revoke delete on table "public"."blocked_domain" from "anon";
-
-revoke insert on table "public"."blocked_domain" from "anon";
-
-revoke references on table "public"."blocked_domain" from "anon";
-
-revoke select on table "public"."blocked_domain" from "anon";
-
-revoke trigger on table "public"."blocked_domain" from "anon";
-
-revoke truncate on table "public"."blocked_domain" from "anon";
-
-revoke update on table "public"."blocked_domain" from "anon";
-
-revoke delete on table "public"."blocked_domain" from "authenticated";
-
-revoke insert on table "public"."blocked_domain" from "authenticated";
-
-revoke references on table "public"."blocked_domain" from "authenticated";
-
-revoke select on table "public"."blocked_domain" from "authenticated";
-
-revoke trigger on table "public"."blocked_domain" from "authenticated";
-
-revoke truncate on table "public"."blocked_domain" from "authenticated";
-
-revoke update on table "public"."blocked_domain" from "authenticated";
-
-revoke delete on table "public"."blocked_domain" from "service_role";
-
-revoke insert on table "public"."blocked_domain" from "service_role";
-
-revoke references on table "public"."blocked_domain" from "service_role";
-
-revoke select on table "public"."blocked_domain" from "service_role";
-
-revoke trigger on table "public"."blocked_domain" from "service_role";
-
-revoke truncate on table "public"."blocked_domain" from "service_role";
-
-revoke update on table "public"."blocked_domain" from "service_role";
-
-revoke delete on table "public"."blocked_domain" from "supabase_auth_admin";
-
-revoke insert on table "public"."blocked_domain" from "supabase_auth_admin";
-
-revoke references on table "public"."blocked_domain" from "supabase_auth_admin";
-
-revoke select on table "public"."blocked_domain" from "supabase_auth_admin";
-
-revoke trigger on table "public"."blocked_domain" from "supabase_auth_admin";
-
-revoke truncate on table "public"."blocked_domain" from "supabase_auth_admin";
-
-revoke update on table "public"."blocked_domain" from "supabase_auth_admin";
-
-revoke delete on table "public"."blocked_user" from "anon";
-
-revoke insert on table "public"."blocked_user" from "anon";
-
-revoke references on table "public"."blocked_user" from "anon";
-
-revoke select on table "public"."blocked_user" from "anon";
-
-revoke trigger on table "public"."blocked_user" from "anon";
-
-revoke truncate on table "public"."blocked_user" from "anon";
-
-revoke update on table "public"."blocked_user" from "anon";
-
-revoke delete on table "public"."blocked_user" from "authenticated";
-
-revoke insert on table "public"."blocked_user" from "authenticated";
-
-revoke references on table "public"."blocked_user" from "authenticated";
-
-revoke select on table "public"."blocked_user" from "authenticated";
-
-revoke trigger on table "public"."blocked_user" from "authenticated";
-
-revoke truncate on table "public"."blocked_user" from "authenticated";
-
-revoke update on table "public"."blocked_user" from "authenticated";
-
-revoke delete on table "public"."blocked_user" from "service_role";
-
-revoke insert on table "public"."blocked_user" from "service_role";
-
-revoke references on table "public"."blocked_user" from "service_role";
-
-revoke select on table "public"."blocked_user" from "service_role";
-
-revoke trigger on table "public"."blocked_user" from "service_role";
-
-revoke truncate on table "public"."blocked_user" from "service_role";
-
-revoke update on table "public"."blocked_user" from "service_role";
-
-revoke delete on table "public"."blocked_user" from "supabase_auth_admin";
-
-revoke insert on table "public"."blocked_user" from "supabase_auth_admin";
-
-revoke references on table "public"."blocked_user" from "supabase_auth_admin";
-
-revoke select on table "public"."blocked_user" from "supabase_auth_admin";
-
-revoke trigger on table "public"."blocked_user" from "supabase_auth_admin";
-
-revoke truncate on table "public"."blocked_user" from "supabase_auth_admin";
-
-revoke update on table "public"."blocked_user" from "supabase_auth_admin";
-
-revoke delete on table "public"."current_endpoints" from "anon";
-
-revoke insert on table "public"."current_endpoints" from "anon";
-
-revoke references on table "public"."current_endpoints" from "anon";
-
-revoke select on table "public"."current_endpoints" from "anon";
-
-revoke trigger on table "public"."current_endpoints" from "anon";
-
-revoke truncate on table "public"."current_endpoints" from "anon";
-
-revoke update on table "public"."current_endpoints" from "anon";
-
-revoke delete on table "public"."current_endpoints" from "authenticated";
-
-revoke insert on table "public"."current_endpoints" from "authenticated";
-
-revoke references on table "public"."current_endpoints" from "authenticated";
-
-revoke select on table "public"."current_endpoints" from "authenticated";
-
-revoke trigger on table "public"."current_endpoints" from "authenticated";
-
-revoke truncate on table "public"."current_endpoints" from "authenticated";
-
-revoke update on table "public"."current_endpoints" from "authenticated";
-
-revoke delete on table "public"."current_endpoints" from "service_role";
-
-revoke insert on table "public"."current_endpoints" from "service_role";
-
-revoke references on table "public"."current_endpoints" from "service_role";
-
-revoke select on table "public"."current_endpoints" from "service_role";
-
-revoke trigger on table "public"."current_endpoints" from "service_role";
-
-revoke truncate on table "public"."current_endpoints" from "service_role";
-
-revoke update on table "public"."current_endpoints" from "service_role";
-
-revoke delete on table "public"."current_endpoints" from "supabase_auth_admin";
-
-revoke insert on table "public"."current_endpoints" from "supabase_auth_admin";
-
-revoke references on table "public"."current_endpoints" from "supabase_auth_admin";
-
-revoke select on table "public"."current_endpoints" from "supabase_auth_admin";
-
-revoke trigger on table "public"."current_endpoints" from "supabase_auth_admin";
-
-revoke truncate on table "public"."current_endpoints" from "supabase_auth_admin";
-
-revoke update on table "public"."current_endpoints" from "supabase_auth_admin";
-
-revoke delete on table "public"."flagged_domain" from "anon";
-
-revoke insert on table "public"."flagged_domain" from "anon";
-
-revoke references on table "public"."flagged_domain" from "anon";
-
-revoke select on table "public"."flagged_domain" from "anon";
-
-revoke trigger on table "public"."flagged_domain" from "anon";
-
-revoke truncate on table "public"."flagged_domain" from "anon";
-
-revoke update on table "public"."flagged_domain" from "anon";
-
-revoke delete on table "public"."flagged_domain" from "authenticated";
-
-revoke insert on table "public"."flagged_domain" from "authenticated";
-
-revoke references on table "public"."flagged_domain" from "authenticated";
-
-revoke select on table "public"."flagged_domain" from "authenticated";
-
-revoke trigger on table "public"."flagged_domain" from "authenticated";
-
-revoke truncate on table "public"."flagged_domain" from "authenticated";
-
-revoke update on table "public"."flagged_domain" from "authenticated";
-
-revoke delete on table "public"."flagged_domain" from "service_role";
-
-revoke insert on table "public"."flagged_domain" from "service_role";
-
-revoke references on table "public"."flagged_domain" from "service_role";
-
-revoke select on table "public"."flagged_domain" from "service_role";
-
-revoke trigger on table "public"."flagged_domain" from "service_role";
-
-revoke truncate on table "public"."flagged_domain" from "service_role";
-
-revoke update on table "public"."flagged_domain" from "service_role";
-
-revoke delete on table "public"."flagged_domain" from "supabase_auth_admin";
-
-revoke insert on table "public"."flagged_domain" from "supabase_auth_admin";
-
-revoke references on table "public"."flagged_domain" from "supabase_auth_admin";
-
-revoke select on table "public"."flagged_domain" from "supabase_auth_admin";
-
-revoke trigger on table "public"."flagged_domain" from "supabase_auth_admin";
-
-revoke truncate on table "public"."flagged_domain" from "supabase_auth_admin";
-
-revoke update on table "public"."flagged_domain" from "supabase_auth_admin";
-
-revoke delete on table "public"."org_action_limit" from "anon";
-
-revoke insert on table "public"."org_action_limit" from "anon";
-
-revoke references on table "public"."org_action_limit" from "anon";
-
-revoke select on table "public"."org_action_limit" from "anon";
-
-revoke trigger on table "public"."org_action_limit" from "anon";
-
-revoke truncate on table "public"."org_action_limit" from "anon";
-
-revoke update on table "public"."org_action_limit" from "anon";
-
-revoke delete on table "public"."org_action_limit" from "authenticated";
-
-revoke insert on table "public"."org_action_limit" from "authenticated";
-
-revoke references on table "public"."org_action_limit" from "authenticated";
-
-revoke select on table "public"."org_action_limit" from "authenticated";
-
-revoke trigger on table "public"."org_action_limit" from "authenticated";
-
-revoke truncate on table "public"."org_action_limit" from "authenticated";
-
-revoke update on table "public"."org_action_limit" from "authenticated";
-
-revoke delete on table "public"."org_action_limit" from "service_role";
-
-revoke insert on table "public"."org_action_limit" from "service_role";
-
-revoke references on table "public"."org_action_limit" from "service_role";
-
-revoke select on table "public"."org_action_limit" from "service_role";
-
-revoke trigger on table "public"."org_action_limit" from "service_role";
-
-revoke truncate on table "public"."org_action_limit" from "service_role";
-
-revoke update on table "public"."org_action_limit" from "service_role";
-
-revoke delete on table "public"."org_action_limit" from "supabase_auth_admin";
-
-revoke insert on table "public"."org_action_limit" from "supabase_auth_admin";
-
-revoke references on table "public"."org_action_limit" from "supabase_auth_admin";
-
-revoke select on table "public"."org_action_limit" from "supabase_auth_admin";
-
-revoke trigger on table "public"."org_action_limit" from "supabase_auth_admin";
-
-revoke truncate on table "public"."org_action_limit" from "supabase_auth_admin";
-
-revoke update on table "public"."org_action_limit" from "supabase_auth_admin";
-
-revoke delete on table "public"."org_user_credits" from "anon";
-
-revoke insert on table "public"."org_user_credits" from "anon";
-
-revoke references on table "public"."org_user_credits" from "anon";
-
-revoke select on table "public"."org_user_credits" from "anon";
-
-revoke trigger on table "public"."org_user_credits" from "anon";
-
-revoke truncate on table "public"."org_user_credits" from "anon";
-
-revoke update on table "public"."org_user_credits" from "anon";
-
-revoke delete on table "public"."org_user_credits" from "authenticated";
-
-revoke insert on table "public"."org_user_credits" from "authenticated";
-
-revoke references on table "public"."org_user_credits" from "authenticated";
-
-revoke select on table "public"."org_user_credits" from "authenticated";
-
-revoke trigger on table "public"."org_user_credits" from "authenticated";
-
-revoke truncate on table "public"."org_user_credits" from "authenticated";
-
-revoke update on table "public"."org_user_credits" from "authenticated";
-
-revoke delete on table "public"."org_user_credits" from "service_role";
-
-revoke insert on table "public"."org_user_credits" from "service_role";
-
-revoke references on table "public"."org_user_credits" from "service_role";
-
-revoke select on table "public"."org_user_credits" from "service_role";
-
-revoke trigger on table "public"."org_user_credits" from "service_role";
-
-revoke truncate on table "public"."org_user_credits" from "service_role";
-
-revoke update on table "public"."org_user_credits" from "service_role";
-
-revoke delete on table "public"."org_user_credits" from "supabase_auth_admin";
-
-revoke insert on table "public"."org_user_credits" from "supabase_auth_admin";
-
-revoke references on table "public"."org_user_credits" from "supabase_auth_admin";
-
-revoke select on table "public"."org_user_credits" from "supabase_auth_admin";
-
-revoke trigger on table "public"."org_user_credits" from "supabase_auth_admin";
-
-revoke truncate on table "public"."org_user_credits" from "supabase_auth_admin";
-
-revoke update on table "public"."org_user_credits" from "supabase_auth_admin";
+create extension if not exists "supabase-dbdev" with schema "public" version '0.0.5';
 
 revoke delete on table "public"."spatial_ref_sys" from "anon";
 
@@ -516,229 +129,92 @@ revoke truncate on table "public"."spatial_ref_sys" from "service_role";
 
 revoke update on table "public"."spatial_ref_sys" from "service_role";
 
-revoke delete on table "public"."workflow_node_runs" from "anon";
+revoke delete on table "public"."user_last_sign_in" from "anon";
 
-revoke insert on table "public"."workflow_node_runs" from "anon";
+revoke insert on table "public"."user_last_sign_in" from "anon";
 
-revoke references on table "public"."workflow_node_runs" from "anon";
+revoke references on table "public"."user_last_sign_in" from "anon";
 
-revoke select on table "public"."workflow_node_runs" from "anon";
+revoke select on table "public"."user_last_sign_in" from "anon";
 
-revoke trigger on table "public"."workflow_node_runs" from "anon";
+revoke trigger on table "public"."user_last_sign_in" from "anon";
 
-revoke truncate on table "public"."workflow_node_runs" from "anon";
+revoke truncate on table "public"."user_last_sign_in" from "anon";
 
-revoke update on table "public"."workflow_node_runs" from "anon";
+revoke update on table "public"."user_last_sign_in" from "anon";
 
-revoke delete on table "public"."workflow_node_runs" from "authenticated";
+revoke delete on table "public"."user_last_sign_in" from "authenticated";
 
-revoke insert on table "public"."workflow_node_runs" from "authenticated";
+revoke insert on table "public"."user_last_sign_in" from "authenticated";
 
-revoke references on table "public"."workflow_node_runs" from "authenticated";
+revoke references on table "public"."user_last_sign_in" from "authenticated";
 
-revoke select on table "public"."workflow_node_runs" from "authenticated";
+revoke select on table "public"."user_last_sign_in" from "authenticated";
 
-revoke trigger on table "public"."workflow_node_runs" from "authenticated";
+revoke trigger on table "public"."user_last_sign_in" from "authenticated";
 
-revoke truncate on table "public"."workflow_node_runs" from "authenticated";
+revoke truncate on table "public"."user_last_sign_in" from "authenticated";
 
-revoke update on table "public"."workflow_node_runs" from "authenticated";
+revoke update on table "public"."user_last_sign_in" from "authenticated";
 
-revoke delete on table "public"."workflow_node_runs" from "service_role";
+revoke delete on table "public"."user_last_sign_in" from "service_role";
 
-revoke insert on table "public"."workflow_node_runs" from "service_role";
+revoke insert on table "public"."user_last_sign_in" from "service_role";
 
-revoke references on table "public"."workflow_node_runs" from "service_role";
+revoke references on table "public"."user_last_sign_in" from "service_role";
 
-revoke select on table "public"."workflow_node_runs" from "service_role";
+revoke select on table "public"."user_last_sign_in" from "service_role";
 
-revoke trigger on table "public"."workflow_node_runs" from "service_role";
+revoke trigger on table "public"."user_last_sign_in" from "service_role";
 
-revoke truncate on table "public"."workflow_node_runs" from "service_role";
+revoke truncate on table "public"."user_last_sign_in" from "service_role";
 
-revoke update on table "public"."workflow_node_runs" from "service_role";
+revoke update on table "public"."user_last_sign_in" from "service_role";
 
-revoke delete on table "public"."workflow_node_runs" from "supabase_auth_admin";
+revoke delete on table "public"."user_last_sign_in" from "supabase_auth_admin";
 
-revoke insert on table "public"."workflow_node_runs" from "supabase_auth_admin";
+revoke insert on table "public"."user_last_sign_in" from "supabase_auth_admin";
 
-revoke references on table "public"."workflow_node_runs" from "supabase_auth_admin";
+revoke references on table "public"."user_last_sign_in" from "supabase_auth_admin";
 
-revoke select on table "public"."workflow_node_runs" from "supabase_auth_admin";
+revoke select on table "public"."user_last_sign_in" from "supabase_auth_admin";
 
-revoke trigger on table "public"."workflow_node_runs" from "supabase_auth_admin";
+revoke trigger on table "public"."user_last_sign_in" from "supabase_auth_admin";
 
-revoke truncate on table "public"."workflow_node_runs" from "supabase_auth_admin";
+revoke truncate on table "public"."user_last_sign_in" from "supabase_auth_admin";
 
-revoke update on table "public"."workflow_node_runs" from "supabase_auth_admin";
+revoke update on table "public"."user_last_sign_in" from "supabase_auth_admin";
+
+alter table "public"."project_roles" drop constraint "project_roles_user_id_fkey";
 
 alter table "public"."workflows" drop constraint "workflows_status_check";
 
-drop function if exists "public"."get_organization_members_with_credits_pagination_filters"(org_id uuid, filter_name text, filter_email text, filter_role text, page integer, page_size integer);
-
-create table "public"."user_last_sign_in" (
-    "last_sign_in_at" timestamp with time zone
+create table "public"."chatbot-prompts" (
+    "id" bigint generated by default as identity not null,
+    "created_at" timestamp with time zone not null default now(),
+    "user_id" text,
+    "organization_id" text,
+    "prompt" text,
+    "ai_response" text,
+    "project_id" text
 );
 
+
+alter table "public"."chatbot-prompts" enable row level security;
+
+CREATE UNIQUE INDEX "chatbot-prompts_pkey" ON public."chatbot-prompts" USING btree (id);
+
+alter table "public"."chatbot-prompts" add constraint "chatbot-prompts_pkey" PRIMARY KEY using index "chatbot-prompts_pkey";
+
+alter table "public"."project_roles" add constraint "project_roles_user_id_fkey" FOREIGN KEY (user_id) REFERENCES auth.users(id) ON UPDATE CASCADE ON DELETE CASCADE not valid;
+
+alter table "public"."project_roles" validate constraint "project_roles_user_id_fkey";
 
 alter table "public"."workflows" add constraint "workflows_status_check" CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'archived'::character varying, 'draft'::character varying])::text[]))) not valid;
 
 alter table "public"."workflows" validate constraint "workflows_status_check";
 
 set check_function_bodies = off;
-
-CREATE OR REPLACE FUNCTION public.get_user_total_credits(input_user_id uuid)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO ''
-AS $function$
-DECLARE
-  result JSONB;
-BEGIN
-  -- Get the user's total credits from the credits table
-  SELECT jsonb_build_object(
-    'total', COALESCE(SUM(total), 0),
-    'consumed', COALESCE(SUM(consumed), 0),
-    'remaining', COALESCE(SUM(remaining), 0)
-  ) INTO result
-  FROM public.credits
-  WHERE user_id = input_user_id;
-
-  -- Return default values if no credits found
-  RETURN COALESCE(result, jsonb_build_object(
-    'total', 0,
-    'consumed', 0,
-    'remaining', 0
-  ));
-END;
-$function$
-;
-
-CREATE OR REPLACE FUNCTION public.get_users_with_filters(filter text DEFAULT NULL::text, page integer DEFAULT 0, page_size integer DEFAULT 10, sort_column text DEFAULT 'full_name'::text, sort_ascending boolean DEFAULT true, organization_id uuid DEFAULT NULL::uuid)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO ''
-AS $function$
-DECLARE
-  result JSONB;
-  from_offset INTEGER;
-  to_offset INTEGER;
-BEGIN
-  -- Calculate pagination offsets
-  from_offset := page * page_size;
-  to_offset := from_offset + page_size - 1;
-  
-  -- Build the query with filtering, sorting, and pagination
-  WITH filtered_users AS (
-    SELECT 
-      p.user_id,
-      p.full_name,
-      p.email,
-      p.avatar_url,
-      au.last_sign_in_at
-    FROM 
-      public.profile p
-      LEFT JOIN auth.users au ON p.user_id = au.id
-    WHERE 
-      (filter IS NULL OR 
-       p.full_name ILIKE '%' || filter || '%' OR 
-       p.email ILIKE '%' || filter || '%')
-      -- Filter by organization if organization_id is provided
-      AND (
-        get_users_with_filters.organization_id IS NULL 
-        OR 
-        p.user_id IN (
-          SELECT om.user_id 
-          FROM public.organization_roles om 
-          WHERE om.organization_id = get_users_with_filters.organization_id
-        )
-      )
-    ORDER BY
-      CASE 
-        WHEN sort_column = 'full_name' AND sort_ascending THEN p.full_name 
-      END ASC,
-      CASE 
-        WHEN sort_column = 'full_name' AND NOT sort_ascending THEN p.full_name 
-      END DESC,
-      CASE 
-        WHEN sort_column = 'email' AND sort_ascending THEN p.email 
-      END ASC,
-      CASE 
-        WHEN sort_column = 'email' AND NOT sort_ascending THEN p.email 
-      END DESC,
-      CASE 
-        WHEN sort_column = 'last_sign_in_at' AND sort_ascending THEN au.last_sign_in_at 
-      END ASC,
-      CASE 
-        WHEN sort_column = 'last_sign_in_at' AND NOT sort_ascending THEN au.last_sign_in_at 
-      END DESC,
-      -- Default sorting if sort_column is not recognized
-      CASE 
-        WHEN sort_column NOT IN ('full_name', 'email', 'last_sign_in_at') AND sort_ascending THEN p.full_name 
-      END ASC,
-      CASE 
-        WHEN sort_column NOT IN ('full_name', 'email', 'last_sign_in_at') AND NOT sort_ascending THEN p.full_name 
-      END DESC
-    LIMIT page_size
-    OFFSET from_offset
-  )
-  SELECT 
-    jsonb_agg(
-      jsonb_build_object(
-        'user_id', fu.user_id,
-        'full_name', fu.full_name,
-        'email', fu.email,
-        'avatar_url', fu.avatar_url,
-        'last_sign_in_at', fu.last_sign_in_at
-      )
-    ) INTO result
-  FROM 
-    filtered_users fu;
-
-  RETURN COALESCE(result, '[]'::jsonb);
-END;
-$function$
-;
-
-CREATE OR REPLACE FUNCTION public.update_user_credits_super_admin(input_user_id uuid, new_total integer)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO ''
-AS $function$
-DECLARE
-  updated_record JSONB;
-BEGIN
-  -- Check if record exists
-  IF EXISTS (SELECT 1 FROM public.credits WHERE user_id = input_user_id) THEN
-    -- Update only the total column
-    UPDATE public.credits
-    SET total = new_total
-    WHERE user_id = input_user_id
-    RETURNING jsonb_build_object(
-      'user_id', user_id,
-      'total', total
-    ) INTO updated_record;
-  ELSE
-    -- If no record exists, create a new one with just the required fields
-    INSERT INTO public.credits (user_id, total)
-    VALUES (input_user_id, new_total)
-    RETURNING jsonb_build_object(
-      'user_id', user_id,
-      'total', total
-    ) INTO updated_record;
-  END IF;
-
-  -- Return the updated record
-  RETURN COALESCE(updated_record, jsonb_build_object(
-    'error', 'Failed to update credits',
-    'user_id', input_user_id
-  ));
-END;
-$function$
-;
 
 CREATE OR REPLACE FUNCTION public.add_profile()
  RETURNS trigger
@@ -1401,7 +877,7 @@ BEGIN
     WHERE r.organization_id = org_id
       AND (filter_name IS NULL OR filter_name = '' OR p.full_name ILIKE '%' || filter_name || '%')
       AND (filter_email IS NULL OR filter_email = '' OR p.email ILIKE '%' || filter_email || '%')
-      AND (filter_role IS NULL OR filter_role = '' OR r.role = filter_role)
+      AND (filter_role IS NULL OR filter_role = '' OR LOWER(r.role) LIKE '%' || LOWER(filter_role) || '%')
   )
   SELECT 
     filtered_data.user_id, 
@@ -2006,6 +1482,130 @@ BEGIN
     )
   ) INTO result
   FROM filtered_projects fp;
+
+  RETURN COALESCE(result, '[]'::jsonb);
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.get_user_total_credits(input_user_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  result JSONB;
+BEGIN
+  -- Get the user's total credits from the credits table
+  SELECT jsonb_build_object(
+    'total', COALESCE(SUM(total), 0),
+    'consumed', COALESCE(SUM(consumed), 0),
+    'remaining', COALESCE(SUM(remaining), 0)
+  ) INTO result
+  FROM public.credits
+  WHERE user_id = input_user_id;
+
+  -- Return default values if no credits found
+  RETURN COALESCE(result, jsonb_build_object(
+    'total', 0,
+    'consumed', 0,
+    'remaining', 0
+  ));
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.get_users_with_filters(filter text DEFAULT NULL::text, page integer DEFAULT 0, page_size integer DEFAULT 10, sort_column text DEFAULT 'full_name'::text, sort_ascending boolean DEFAULT true, organization_id uuid DEFAULT NULL::uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  result JSONB;
+  from_offset INTEGER;
+  to_offset INTEGER;
+BEGIN
+  -- Calculate pagination offsets
+  from_offset := page * page_size;
+  to_offset := from_offset + page_size - 1;
+  
+  -- Build the query with filtering, sorting, and pagination
+  WITH filtered_users AS (
+    SELECT 
+      p.user_id,
+      p.full_name,
+      p.email,
+      p.avatar_url,
+      au.last_sign_in_at,
+      -- Get credit information using subqueries
+      COALESCE((SELECT SUM(c.total) FROM public.credits c WHERE c.user_id = p.user_id), 0) AS total_credits,
+      COALESCE((SELECT SUM(c.consumed) FROM public.credits c WHERE c.user_id = p.user_id), 0) AS consumed_credits,
+      COALESCE((SELECT SUM(c.remaining) FROM public.credits c WHERE c.user_id = p.user_id), 0) AS remaining_credits
+    FROM 
+      public.profile p
+      LEFT JOIN auth.users au ON p.user_id = au.id
+    WHERE 
+      (filter IS NULL OR 
+       p.full_name ILIKE '%' || filter || '%' OR 
+       p.email ILIKE '%' || filter || '%')
+      -- Filter by organization if organization_id is provided
+      AND (
+        get_users_with_filters.organization_id IS NULL 
+        OR 
+        p.user_id IN (
+          SELECT om.user_id 
+          FROM public.organization_roles om 
+          WHERE om.organization_id = get_users_with_filters.organization_id
+        )
+      )
+    ORDER BY
+      CASE 
+        WHEN sort_column = 'full_name' AND sort_ascending THEN p.full_name 
+      END ASC,
+      CASE 
+        WHEN sort_column = 'full_name' AND NOT sort_ascending THEN p.full_name 
+      END DESC,
+      CASE 
+        WHEN sort_column = 'email' AND sort_ascending THEN p.email 
+      END ASC,
+      CASE 
+        WHEN sort_column = 'email' AND NOT sort_ascending THEN p.email 
+      END DESC,
+      CASE 
+        WHEN sort_column = 'last_sign_in_at' AND sort_ascending THEN au.last_sign_in_at 
+      END ASC,
+      CASE 
+        WHEN sort_column = 'last_sign_in_at' AND NOT sort_ascending THEN au.last_sign_in_at 
+      END DESC,
+      -- Default sorting if sort_column is not recognized
+      CASE 
+        WHEN sort_column NOT IN ('full_name', 'email', 'last_sign_in_at') AND sort_ascending THEN p.full_name 
+      END ASC,
+      CASE 
+        WHEN sort_column NOT IN ('full_name', 'email', 'last_sign_in_at') AND NOT sort_ascending THEN p.full_name 
+      END DESC
+    LIMIT page_size
+    OFFSET from_offset
+  )
+  SELECT 
+    jsonb_agg(
+      jsonb_build_object(
+        'user_id', fu.user_id,
+        'full_name', fu.full_name,
+        'email', fu.email,
+        'avatar_url', fu.avatar_url,
+        'last_sign_in_at', fu.last_sign_in_at,
+        'credits', jsonb_build_object(
+          'total', fu.total_credits,
+          'consumed', fu.consumed_credits,
+          'remaining', fu.remaining_credits
+        )
+      )
+    ) INTO result
+  FROM 
+    filtered_users fu;
 
   RETURN COALESCE(result, '[]'::jsonb);
 END;
@@ -2653,6 +2253,44 @@ END;
 $function$
 ;
 
+CREATE OR REPLACE FUNCTION public.update_user_credits_super_admin(input_user_id uuid, new_total integer)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  updated_record JSONB;
+BEGIN
+  -- Check if record exists
+  IF EXISTS (SELECT 1 FROM public.credits WHERE user_id = input_user_id) THEN
+    -- Update only the total column
+    UPDATE public.credits
+    SET total = new_total
+    WHERE user_id = input_user_id
+    RETURNING jsonb_build_object(
+      'user_id', user_id,
+      'total', total
+    ) INTO updated_record;
+  ELSE
+    -- If no record exists, create a new one with just the required fields
+    INSERT INTO public.credits (user_id, total)
+    VALUES (input_user_id, new_total)
+    RETURNING jsonb_build_object(
+      'user_id', user_id,
+      'total', total
+    ) INTO updated_record;
+  END IF;
+
+  -- Return the updated record
+  RETURN COALESCE(updated_record, jsonb_build_object(
+    'error', 'Failed to update credits',
+    'user_id', input_user_id
+  ));
+END;
+$function$
+;
+
 CREATE OR REPLACE FUNCTION public.update_user_roles()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -2827,8 +2465,15 @@ END;
 $function$
 ;
 
+create policy "AI Chat-Policy"
+on "public"."chatbot-prompts"
+as permissive
+for all
+to public
+using (true)
+with check (true);
 
-drop function if exists "world"."get_object_snapshot"(p_object_id text, p_version integer, p_hash text);
+
 
 set check_function_bodies = off;
 
